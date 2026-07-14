@@ -146,7 +146,7 @@ function buyZone() {
     if (!spend(z.unlock)) return;
     S.zones++;
     sfx('chest');
-    toast(z.name + ' — открыто! 🎉');
+    toast(z.name + ' — открыто!');
     persist(true);
 }
 
@@ -213,7 +213,7 @@ function sellStore(id, n) {
     earn(got);
     S.cnt.sold += n;
     sfx('sell');
-    toast('+' + fmt(got) + ' 🪙');
+    toast('+' + fmt(got) + ' монет');
     if (S.tut === 2) { S.tut = 3; renderTut(); }
     persist();
     renderBarn(); renderHud();
@@ -226,7 +226,7 @@ function sellAll() {
     earn(got);
     S.cnt.sold += n;
     sfx('sell');
-    toast('+' + fmt(got) + ' 🪙');
+    toast('+' + fmt(got) + ' монет');
     if (S.tut === 2) { S.tut = 3; renderTut(); }
     persist();
     renderBarn(); renderHud();
@@ -243,12 +243,12 @@ function fulfillOrder(k) {
     S.store[c.id] -= o.qty;
     if (!S.store[c.id]) delete S.store[c.id];
     earn(o.reward);
-    if (o.seed) { S.seeds += o.seed; toast('+1 золотое семя! ✨'); }
+    if (o.seed) { S.seeds += o.seed; toast('+1 золотое семя!'); }
     S.cnt.orders++;
     S.cnt.sold += o.qty;
     S.orders[k] = rollOrder();
     sfx('order');
-    toast('Заказ выполнен! +' + fmt(o.reward) + ' 🪙');
+    toast('Заказ выполнен! +' + fmt(o.reward) + ' монет');
     persist(true);
     renderOrders(); renderHud();
 }
@@ -282,7 +282,7 @@ function claimQuest(k) {
     q.claimed = true;
     earn(q.reward);
     sfx('quest');
-    toast('Квест выполнен! +' + fmt(q.reward) + ' 🪙');
+    toast('Квест выполнен! +' + fmt(q.reward) + ' монет');
     persist(true);
     renderOrders(); renderHud();
 }
@@ -293,7 +293,7 @@ function claimChest() {
     earn(r.coins);
     S.seeds += r.seed;
     sfx('chest');
-    toast('Сундук: +' + fmt(r.coins) + ' 🪙 и +1 семя! ✨');
+    toast('Сундук: +' + fmt(r.coins) + ' монет и +1 золотое семя!');
     persist(true);
     renderOrders(); renderHud();
 }
@@ -306,7 +306,7 @@ function checkAch() {
             S.ach[a.id] = true;
             S.seeds += a.seed;
             sfx('chest');
-            toast('🏆 ' + a.name + ': +' + a.seed + ' зол. сем.');
+            toast('Достижение «' + a.name + '»: +' + a.seed + ' зол. сем.');
             persist(true);
             renderHud();
         }
@@ -336,7 +336,7 @@ function doPrestige() {
     S.boostUntil = 0;
     ensureOrders();
     sfx('prestige');
-    toast('🌟 Новый сезон! +' + p + ' золотых семян');
+    toast('Новый сезон! +' + p + ' золотых семян');
     fxPrestige();
     persist(true);
     closeAllSheets();
@@ -362,7 +362,7 @@ function adBoost() {
     showRewarded(() => {
         S.boostUntil = Date.now() + BOOST_MIN*60000;
         sfx('chest');
-        toast('Доход x2 на ' + BOOST_MIN + ' минуты! 🚀');
+        toast('Доход x2 на ' + BOOST_MIN + ' минуты!');
         persist(true);
         renderHud();
     });
@@ -374,7 +374,7 @@ function adGrowAll() {
             if (p.c >= 0) p.t = cropGrow(CROPS[p.c]);
         S.adGrowAt = Date.now() + AD_GROW_CD*1000;
         sfx('chest');
-        toast('Всё выросло! 🌱→🥕');
+        toast('Всё выросло!');
         persist(true);
         renderHud();
     });
@@ -449,17 +449,17 @@ function simulate(dt) {
 }
 
 // ---------- Раскладка мира (общая для рендера и инпута) ----------
-const PLOT_W = 2.6, PLOT_H = 1.5;
-const ZONE_Y = [ 2, 6, 10 ];
-const HORIZON = 15.2;
+const PLOT_W = 2.7, PLOT_H = 1.55;
+const ZONE_Y = [ 2, 6.4, 10.8 ];
+const HORIZON = 15.4;
 function plotPos(i) {
     const z = Math.floor(i / 8), li = i % 8;
-    return vec2(-4.5 + (li%4)*3, ZONE_Y[z] + Math.floor(li/4)*1.9);
+    return vec2(-4.55 + (li%4)*3.05, ZONE_Y[z] + Math.floor(li/4)*2);
 }
 function fitCamera() {
     const w = mainCanvasSize.x, h = mainCanvasSize.y;
-    setCameraScale(Math.min(w / 13, h / 21.5));
-    setCameraPos(vec2(0, 9.6));
+    setCameraScale(Math.min(w / 12.9, h / 22));
+    setCameraPos(vec2(0, 9.8));
 }
 
 // ---------- Инпут по полю ----------
@@ -508,6 +508,8 @@ function takeOffline(mult) {
 // ---------- Цикл LittleJS ----------
 function gameInit() {
     // ВАЖНО: S здесь ещё может быть null — boot() приходит позже (после SDK/фолбэка)
+    setFontDefault('Neucha, sans-serif');
+    try { document.fonts.load('20px Neucha'); } catch(e) {}
     fitCamera();
     initWorldDecor();
 }

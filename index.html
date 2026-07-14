@@ -5,107 +5,150 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Tiny Sprout</title>
 <style>
+/* ---------- шрифты (локально — требование Яндекса) ---------- */
+@font-face { font-family:'Nunito'; font-style:normal; font-weight:200 1000;
+    src:url('fonts/nunito-cyr.woff2') format('woff2');
+    unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+@font-face { font-family:'Nunito'; font-style:normal; font-weight:200 1000;
+    src:url('fonts/nunito-lat.woff2') format('woff2'); }
+@font-face { font-family:'Neucha'; font-style:normal; font-weight:400;
+    src:url('fonts/neucha-cyr.woff2') format('woff2');
+    unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+@font-face { font-family:'Neucha'; font-style:normal; font-weight:400;
+    src:url('fonts/neucha-lat.woff2') format('woff2'); }
+
 :root {
-    --ink: #4a3628;
-    --paper: #fdf6e3;
-    --card: #fff9ec;
-    --green: #6faf5a;
-    --accent: #e8923a;
+    --ink: #5b4a3a;
+    --ink-soft: #8a7460;
+    --paper: #fdf8ec;
+    --card: #ffffff;
+    --cream: #f6eeda;
+    --green: #a8cc80;
+    --green-edge: #8aad64;
+    --gold: #efc75f;
+    --shadow: 0 4px 14px rgba(96, 74, 52, .16);
+    --edge: rgba(96, 74, 52, .22);
 }
 * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
 html, body { width:100%; height:100%; overflow:hidden; touch-action:none;
-    font-family:'Segoe UI', system-ui, -apple-system, sans-serif; background:#9ccf6e; color:var(--ink); }
+    font-family:'Nunito', system-ui, sans-serif; background:#b1cb8a; color:var(--ink); }
 canvas { display:block; }
 body:not(.ready) .ui { display:none !important; }
+button { font-family:inherit; color:var(--ink); }
+
+.fico { display:inline-flex; }
+.fico svg { width:100%; height:100%; }
+.ci { display:inline-flex; width:14px; height:14px; vertical-align:-2px; font-style:normal; }
+.ci svg { width:100%; height:100%; }
 
 /* ---------- чипы (верх) ---------- */
-.chips { position:fixed; top:env(safe-area-inset-top, 8px); left:8px; display:flex; gap:6px; z-index:10; }
-.chip { background:var(--paper); border:2.5px solid var(--ink); border-radius:20px;
-    padding:5px 12px; font-weight:700; font-size:15px; box-shadow:0 2px 0 rgba(74,54,40,.35); }
-.topright { position:fixed; top:env(safe-area-inset-top, 8px); right:8px; display:flex; gap:6px; z-index:10; }
-.icoBtn { width:38px; height:38px; border-radius:50%; background:var(--paper); border:2.5px solid var(--ink);
-    font-size:17px; cursor:pointer; box-shadow:0 2px 0 rgba(74,54,40,.35); }
+.chips { position:fixed; top:calc(env(safe-area-inset-top, 0px) + 8px); left:8px; display:flex; gap:6px; z-index:10; }
+.chip { display:flex; align-items:center; gap:6px; background:var(--card); border-radius:20px;
+    padding:6px 13px; font-weight:800; font-size:15px; box-shadow:var(--shadow); }
+.chip .fico { width:18px; height:18px; }
+.topright { position:fixed; top:calc(env(safe-area-inset-top, 0px) + 8px); right:8px; display:flex; gap:6px; z-index:10; }
+.icoBtn { width:40px; height:40px; border-radius:50%; background:var(--card); border:none;
+    cursor:pointer; box-shadow:var(--shadow); display:flex; align-items:center; justify-content:center; }
+.icoBtn .fico { width:20px; height:20px; }
 
 /* ---------- FAB (справа) ---------- */
 .fabs { position:fixed; right:8px; top:50%; transform:translateY(-60%); display:flex; flex-direction:column; gap:10px; z-index:10; }
-.fab { position:relative; width:52px; height:52px; border-radius:50%; background:var(--paper);
-    border:3px solid var(--ink); font-size:24px; cursor:pointer; box-shadow:0 3px 0 rgba(74,54,40,.4);
-    transition:transform .1s; }
+.fab { position:relative; width:54px; height:54px; border-radius:50%; background:var(--card); border:none;
+    cursor:pointer; box-shadow:0 3px 0 var(--edge), var(--shadow);
+    display:flex; align-items:center; justify-content:center; transition:transform .1s; }
 .fab:active { transform:scale(.92); }
-.badge { position:absolute; top:-4px; right:-4px; min-width:20px; height:20px; border-radius:10px;
-    background:#e2503a; color:#fff; border:2px solid var(--ink); font-size:11px; font-weight:800;
-    display:flex; align-items:center; justify-content:center; padding:0 4px; }
-#prestigeBadge { background:#f0c93e; color:var(--ink); }
+.fab .fico { width:28px; height:28px; }
+.badge { position:absolute; top:-3px; right:-3px; min-width:20px; height:20px; border-radius:10px;
+    background:#e2725a; color:#fff; font-size:11px; font-weight:800;
+    display:flex; align-items:center; justify-content:center; padding:0 5px;
+    box-shadow:0 1px 3px rgba(96,74,52,.3); }
+#prestigeBadge { background:var(--gold); color:var(--ink); }
 
 /* ---------- низ ---------- */
 .bottom { position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom, 0px) + 10px);
     transform:translateX(-50%); display:flex; gap:8px; z-index:10; flex-wrap:wrap; justify-content:center; max-width:96vw; }
-.bbtn { background:var(--paper); border:3px solid var(--ink); border-radius:22px; padding:9px 16px;
-    font-size:15px; font-weight:700; color:var(--ink); cursor:pointer; box-shadow:0 3px 0 rgba(74,54,40,.4); }
-.bbtn:active { transform:translateY(2px); box-shadow:0 1px 0 rgba(74,54,40,.4); }
+.bbtn { display:inline-flex; align-items:center; gap:7px; background:var(--card); border:none;
+    border-radius:22px; padding:10px 16px; font-size:14.5px; font-weight:800; cursor:pointer;
+    box-shadow:0 3px 0 var(--edge), var(--shadow); }
+.bbtn:active { transform:translateY(2px); box-shadow:0 1px 0 var(--edge), var(--shadow); }
 .bbtn:disabled { opacity:.55; }
-.bbtn.on { background:#f8e27a; }
+.bbtn.on { background:#fceec2; }
+.bbtn .ci { width:17px; height:17px; }
 
 /* ---------- панели ---------- */
-.overlay { position:fixed; inset:0; background:rgba(40,28,18,.45); opacity:0; pointer-events:none;
+.overlay { position:fixed; inset:0; background:rgba(64,50,36,.4); opacity:0; pointer-events:none;
     transition:opacity .2s; z-index:20; }
 .overlay.open { opacity:1; pointer-events:auto; }
 .sheet { position:fixed; left:50%; bottom:0; transform:translate(-50%, 105%); width:min(480px, 100vw);
-    max-height:76vh; background:var(--paper); border:3px solid var(--ink); border-bottom:none;
-    border-radius:22px 22px 0 0; z-index:30; transition:transform .25s cubic-bezier(.2,.9,.3,1.1);
-    display:flex; flex-direction:column; }
+    max-height:78vh; background:var(--paper); border-radius:26px 26px 0 0; z-index:30;
+    transition:transform .25s cubic-bezier(.2,.9,.3,1.1); display:flex; flex-direction:column;
+    box-shadow:0 -8px 30px rgba(64,50,36,.25); }
 .sheet.open { transform:translate(-50%, 0); }
-.sheet h2 { padding:14px 18px 8px; font-size:19px; }
-.close { position:absolute; top:10px; right:12px; width:32px; height:32px; border-radius:50%;
-    border:2.5px solid var(--ink); background:var(--card); font-size:15px; font-weight:800; cursor:pointer; }
-.tabs { display:flex; gap:6px; padding:0 14px 10px; }
-.tab { flex:1; padding:7px 4px; border-radius:14px; border:2.5px solid var(--ink); background:var(--card);
-    font-weight:700; font-size:13px; cursor:pointer; color:var(--ink); }
-.tab.on { background:#c8e6a0; }
-.list { overflow-y:auto; padding:4px 14px 18px; flex:1; }
+.sheet::before { content:''; display:block; width:44px; height:5px; border-radius:3px;
+    background:#ddd0b8; margin:9px auto 0; }
+.sheet h2 { display:flex; align-items:center; gap:9px; padding:8px 20px 8px;
+    font-family:'Neucha', 'Nunito', sans-serif; font-weight:400; font-size:24px; }
+.sheet h2 .fico { width:24px; height:24px; }
+.close { position:absolute; top:14px; right:14px; width:32px; height:32px; border-radius:50%;
+    border:none; background:var(--cream); color:var(--ink-soft); font-size:15px; font-weight:800; cursor:pointer; }
+.tabs { display:flex; gap:4px; margin:0 16px 10px; padding:4px; background:var(--cream); border-radius:16px; }
+.tab { flex:1; padding:8px 4px; border-radius:12px; border:none; background:transparent;
+    font-weight:800; font-size:12.5px; cursor:pointer; color:var(--ink-soft); }
+.tab.on { background:var(--card); color:var(--ink); box-shadow:0 1px 4px rgba(96,74,52,.15); }
+.list { overflow-y:auto; padding:2px 16px 18px; flex:1; }
 
-.row { display:flex; align-items:center; gap:10px; background:var(--card); border:2.5px solid var(--ink);
-    border-radius:16px; padding:8px 10px; margin-bottom:8px; }
-.row.sel { background:#e4f2cc; }
+.row { display:flex; align-items:center; gap:10px; background:var(--card);
+    border-radius:18px; padding:9px 11px; margin-bottom:8px; box-shadow:0 1px 4px rgba(96,74,52,.1); }
+.row.sel { background:#eef4dd; box-shadow:inset 0 0 0 2px #b5cf8e; }
 .row.dim { opacity:.55; }
-.row.chest { background:#fcefc8; }
-.row .ic { font-size:26px; width:36px; text-align:center; flex-shrink:0; }
+.row.chest { background:#fdf3d7; }
+.row .ic { width:42px; height:42px; border-radius:13px; background:var(--cream); flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; }
+.row .ic svg { width:30px; height:30px; }
 .row .info { flex:1; min-width:0; }
-.row .info b { font-size:14px; }
-.row .info em { font-style:normal; color:#8a6a48; font-size:12px; }
-.row .info small { display:block; color:#7a6450; font-size:11.5px; line-height:1.25; }
-.btn { border:2.5px solid var(--ink); background:#c8e6a0; color:var(--ink); border-radius:14px;
-    padding:7px 10px; font-weight:800; font-size:12.5px; cursor:pointer; white-space:nowrap; flex-shrink:0; }
-.btn:active { transform:scale(.95); }
-.btn.no { background:#e8ded0; opacity:.7; }
-.btn.ghost { background:var(--paper); }
-.tag { font-size:11.5px; font-weight:800; color:#7a9a5a; white-space:nowrap; }
-.tag.lock { color:#a08060; }
-.empty { text-align:center; color:#8a7460; padding:26px 10px; }
-.hint { text-align:center; color:#8a7460; font-size:12.5px; padding-top:6px; }
+.row .info b { font-size:13.5px; }
+.row .info em { font-style:normal; color:#a98f6e; font-size:11.5px; font-weight:800; }
+.row .info small { display:block; color:var(--ink-soft); font-size:11.5px; line-height:1.3; }
+.row .info small .ci { width:11px; height:11px; vertical-align:-1px; }
+.btn { border:none; background:var(--green); color:#fff; border-radius:14px;
+    padding:8px 11px; font-weight:800; font-size:12.5px; cursor:pointer; white-space:nowrap; flex-shrink:0;
+    box-shadow:0 2px 0 var(--green-edge); }
+.btn:active { transform:translateY(1px); box-shadow:0 1px 0 var(--green-edge); }
+.btn.no { background:#ded3bc; color:#9c8a72; box-shadow:0 2px 0 #c9bda4; }
+.btn.ghost { background:var(--cream); color:var(--ink-soft); box-shadow:0 2px 0 #ded1b5; }
+.btn .ci { width:12px; height:12px; vertical-align:-1px; }
+.tag { font-size:11.5px; font-weight:800; color:#94ac6e; white-space:nowrap; }
+.tag.lock { color:#b09a78; }
+.empty { text-align:center; color:var(--ink-soft); padding:26px 10px; }
+.hint { text-align:center; color:var(--ink-soft); font-size:12.5px; padding-top:6px; }
 
-.qbar { height:7px; background:#e0d4c0; border-radius:4px; margin-top:4px; overflow:hidden; border:1.5px solid #c8b8a0; }
+.qbar { height:7px; background:var(--cream); border-radius:4px; margin-top:4px; overflow:hidden; }
 .qbar i { display:block; height:100%; background:var(--green); border-radius:4px; }
 
-.capbar { margin:0 14px 8px; }
-.capwrap { height:12px; background:#e0d4c0; border-radius:7px; overflow:hidden; border:2px solid var(--ink); }
-.capwrap i { display:block; height:100%; background:var(--accent); }
+.capbar { margin:0 16px 8px; }
+.capwrap { height:14px; background:var(--cream); border-radius:8px; overflow:hidden;
+    box-shadow:inset 0 1px 3px rgba(96,74,52,.15); }
+.capwrap i { display:block; height:100%; background:#eeb45f; border-radius:8px; }
 #barnCap { font-size:13px; margin-bottom:4px; }
 
 .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
-.cell { background:var(--card); border:2.5px solid var(--ink); border-radius:14px; text-align:center;
-    padding:8px 2px; }
-.cell .big { font-size:28px; }
-.cell small { font-size:10.5px; color:#7a6450; }
-.cell.dark { opacity:.5; background:#eee2cc; }
+.cell { background:var(--card); border-radius:15px; text-align:center;
+    padding:9px 2px 7px; box-shadow:0 1px 4px rgba(96,74,52,.1); }
+.cell .big { height:32px; display:flex; align-items:center; justify-content:center; }
+.cell .big svg { width:30px; height:30px; }
+.cell .big span { font-size:22px; font-weight:800; color:#c4b294; }
+.cell small { font-size:10.5px; color:var(--ink-soft); }
+.cell.dark { background:#efe7d2; box-shadow:none; }
 
 /* ---------- модалки ---------- */
 .modal { position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
-    background:rgba(40,28,18,.55); opacity:0; pointer-events:none; transition:opacity .2s; z-index:40; }
+    background:rgba(64,50,36,.5); opacity:0; pointer-events:none; transition:opacity .2s; z-index:40; }
 .modal.open { opacity:1; pointer-events:auto; }
-.mbox { background:var(--paper); border:3px solid var(--ink); border-radius:22px; padding:22px;
-    width:min(360px, 92vw); text-align:center; box-shadow:0 6px 0 rgba(74,54,40,.4); }
-.mbox h2 { margin-bottom:10px; }
+.mbox { background:var(--paper); border-radius:26px; padding:24px;
+    width:min(360px, 92vw); text-align:center; box-shadow:0 12px 40px rgba(50,38,26,.35); }
+.mbox h2 { display:flex; align-items:center; justify-content:center; gap:9px; margin-bottom:12px;
+    font-family:'Neucha', 'Nunito', sans-serif; font-weight:400; font-size:26px; }
+.mbox h2 .fico { width:26px; height:26px; }
 .mbox p { margin-bottom:10px; font-size:14.5px; line-height:1.45; }
 .mbox .gold { color:#c89a2e; }
 .mbox .bbtn { margin:4px; }
@@ -113,17 +156,19 @@ body:not(.ready) .ui { display:none !important; }
 /* ---------- туториал ---------- */
 #tut { position:fixed; z-index:15; transform:translate(-50%, -100%); pointer-events:none; text-align:center; }
 #tut.side { transform:translate(-100%, -50%); }
-#tutText { background:var(--paper); border:2.5px solid var(--ink); border-radius:14px; padding:8px 12px;
-    font-weight:700; font-size:13.5px; box-shadow:0 3px 0 rgba(74,54,40,.4); }
-#tutArrow { font-size:26px; animation:bounce .7s infinite alternate; }
-#tut.side #tutArrow { display:inline-block; transform:rotate(-90deg); }
+#tutText { background:var(--card); border-radius:15px; padding:9px 13px;
+    font-family:'Neucha', 'Nunito', sans-serif; font-size:16px; box-shadow:var(--shadow); }
+#tutText .ci { width:15px; height:15px; }
+#tutArrow { margin-top:2px; animation:bounce .7s infinite alternate; }
+#tutArrow .fico { width:26px; height:26px; filter:drop-shadow(0 2px 2px rgba(96,74,52,.3)); }
+#tut.side #tutArrow .fico { transform:rotate(-90deg); }
 @keyframes bounce { from { transform:translateY(0); } to { transform:translateY(7px); } }
 
 /* ---------- тост ---------- */
 #toast { position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom, 0px) + 70px);
-    transform:translate(-50%, 20px); background:var(--ink); color:var(--paper); border-radius:18px;
-    padding:9px 18px; font-weight:700; font-size:14px; opacity:0; transition:all .25s; z-index:50;
-    pointer-events:none; max-width:90vw; text-align:center; }
+    transform:translate(-50%, 20px); background:rgba(75,60,44,.94); color:#fdf8ec; border-radius:18px;
+    padding:10px 18px; font-weight:800; font-size:13.5px; opacity:0; transition:all .25s; z-index:50;
+    pointer-events:none; max-width:90vw; text-align:center; box-shadow:0 4px 14px rgba(50,38,26,.3); }
 #toast.show { opacity:1; transform:translate(-50%, 0); }
 </style>
 </head>
@@ -131,33 +176,33 @@ body:not(.ready) .ui { display:none !important; }
 
 <!-- HUD -->
 <div class="chips ui">
-    <div class="chip" id="coinChip">0 🪙</div>
-    <div class="chip" id="seedChip" style="display:none">0 ✨</div>
-    <div class="chip" id="ipsChip">0/с</div>
+    <div class="chip" id="coinChip"><span class="fico" data-ico="coin"></span><b id="coinVal">0</b></div>
+    <div class="chip" id="seedChip" style="display:none"><span class="fico" data-ico="seed"></span><b id="seedVal">0</b></div>
+    <div class="chip" id="ipsChip"><span class="fico" data-ico="ips"></span><b id="ipsVal">0/с</b></div>
 </div>
 <div class="topright ui">
-    <button class="icoBtn" id="muteBtn">🔊</button>
+    <button class="icoBtn" id="muteBtn"></button>
 </div>
 
 <div class="fabs ui">
-    <button class="fab" id="barnFab">📦<span class="badge" id="barnBadge" style="display:none">0</span></button>
-    <button class="fab" id="orderFab">📋<span class="badge" id="orderBadge" style="display:none">0</span></button>
-    <button class="fab" id="shopFab">🛒</button>
-    <button class="fab" id="albumFab">🏆</button>
-    <button class="fab" id="prestigeFab" style="display:none">🌟<span class="badge" id="prestigeBadge" style="display:none">+0</span></button>
+    <button class="fab" id="barnFab"><span class="fico" data-ico="barn"></span><span class="badge" id="barnBadge" style="display:none">0</span></button>
+    <button class="fab" id="orderFab"><span class="fico" data-ico="orders"></span><span class="badge" id="orderBadge" style="display:none">0</span></button>
+    <button class="fab" id="shopFab"><span class="fico" data-ico="shop"></span></button>
+    <button class="fab" id="albumFab"><span class="fico" data-ico="album"></span></button>
+    <button class="fab" id="prestigeFab" style="display:none"><span class="fico" data-ico="star"></span><span class="badge" id="prestigeBadge" style="display:none">+0</span></button>
 </div>
 
 <div class="bottom ui">
-    <button class="bbtn" id="cropBtn">Сажаем: 🌾 <b>Пшеница</b> ▾</button>
-    <button class="bbtn" id="boostBtn">📺 Доход x2</button>
-    <button class="bbtn" id="growBtn">📺 Дорастить всё</button>
+    <button class="bbtn" id="cropBtn"></button>
+    <button class="bbtn" id="boostBtn"></button>
+    <button class="bbtn" id="growBtn"></button>
 </div>
 
 <!-- Панели -->
 <div class="overlay ui" id="overlay"></div>
 
 <div class="sheet ui" id="shopSheet">
-    <h2>🛒 Магазин</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="shop"></span>Магазин</h2><button class="close">✕</button>
     <div class="tabs">
         <button class="tab on" data-tab="seeds">Семена</button>
         <button class="tab" data-tab="ups">Улучшения</button>
@@ -168,17 +213,17 @@ body:not(.ready) .ui { display:none !important; }
 </div>
 
 <div class="sheet ui" id="barnSheet">
-    <h2>📦 Склад</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="barn"></span>Склад</h2><button class="close">✕</button>
     <div class="capbar">
         <div id="barnCap">Склад: 0 / 60</div>
         <div class="capwrap"><i id="barnBar" style="width:0%"></i></div>
     </div>
     <div class="list" id="barnList"></div>
-    <div style="padding:0 14px 16px"><button class="bbtn" id="sellAllBtn" style="width:100%">💰 Продать всё</button></div>
+    <div style="padding:0 16px 16px"><button class="bbtn" id="sellAllBtn" style="width:100%; justify-content:center"><span class="ci" data-ico="sell"></span>Продать всё</button></div>
 </div>
 
 <div class="sheet ui" id="orderSheet">
-    <h2>📋 Заказы</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="orders"></span>Заказы</h2><button class="close">✕</button>
     <div class="tabs">
         <button class="tab on" data-tab="orders">Заказы</button>
         <button class="tab" data-tab="quests">Квесты дня</button>
@@ -187,7 +232,7 @@ body:not(.ready) .ui { display:none !important; }
 </div>
 
 <div class="sheet ui" id="albumSheet">
-    <h2>🏆 Альбом</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="album"></span>Альбом</h2><button class="close">✕</button>
     <div class="tabs">
         <button class="tab on" data-tab="coll">Коллекция</button>
         <button class="tab" data-tab="ach">Достижения</button>
@@ -198,18 +243,18 @@ body:not(.ready) .ui { display:none !important; }
 <!-- Модалки -->
 <div class="modal ui" id="prestigeModal">
     <div class="mbox">
-        <h2>🌟 Новый сезон</h2>
+        <h2><span class="fico" data-ico="star"></span>Новый сезон</h2>
         <div id="prestigeInfo"></div>
-        <button class="bbtn" id="prestigeGo">🌟 Новый сезон</button>
+        <button class="bbtn" id="prestigeGo">Новый сезон</button>
         <button class="bbtn close2">Позже</button>
     </div>
 </div>
 
 <div class="modal ui" id="offlineModal">
     <div class="mbox">
-        <h2>💤 С возвращением!</h2>
+        <h2><span class="fico" data-ico="moon"></span>С возвращением!</h2>
         <p id="offlineInfo"></p>
-        <button class="bbtn" id="offlineX2">📺 Забрать x2</button>
+        <button class="bbtn" id="offlineX2"><span class="ci" data-ico="ad"></span>Забрать x2</button>
         <button class="bbtn" id="offlineTake">Забрать</button>
     </div>
 </div>
@@ -217,7 +262,7 @@ body:not(.ready) .ui { display:none !important; }
 <!-- Туториал и тост -->
 <div id="tut" style="display:none">
     <div id="tutText"></div>
-    <div id="tutArrow">👇</div>
+    <div id="tutArrow"><span class="fico" data-ico="down"></span></div>
 </div>
 <div id="toast"></div>
 
