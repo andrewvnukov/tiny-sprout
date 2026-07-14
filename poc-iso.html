@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Tiny Sprout — изо пруф-концепт</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { width:100%; height:100%; overflow:hidden; touch-action:none; background:#7fc06a; }
+  canvas { display:block; }
+  #hint { position:fixed; left:50%; bottom:14px; transform:translateX(-50%);
+    background:rgba(75,60,44,.85); color:#fdf8ec; font:600 13px/1.3 system-ui,sans-serif;
+    padding:8px 16px; border-radius:16px; pointer-events:none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">Тащи — двигать карту · Колесо / щипок — зум</div>
+<script>
+'use strict';
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = Math.min(devicePixelRatio || 1, 2);
+
+// ---------- изометрия ----------
+// мир: единицы плиток (gx, gy). z — высота вверх.
+const TW = 42, TH = 21;              // половина ширины/высоты ромба плитки
+function iso(gx, gy, gz = 0) {
+  return { x: (gx - gy) * TW, y: (gx + gy) * TH - gz };
+}
+const depth = (gx, gy, gz = 0) => (gx + gy) * 1000 + gz; // painter's order
+
+// ---------- камера ----------
+const cam = { x: 0, y: 40, zoom: 1, min: .55, max: 1.9 };
+function resize() {
+  W = innerWidth; H = innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+}
+addEventListener('resize', resize); resize();
+
+// экран из мира (с камерой)
+function screen(p) {
+  return { x: W / 2 + (p.x - cam.x) * cam.zoom, y: H / 2 + (p.y - cam.y) * cam.zoom };
+}
+
+// ---------- ввод: пан + зум ----------
+let drag = null, pinch = null;
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, e); startGesture(); });
+cv.addEventListener('pointermove', e => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, e); moveGesture(); });
+cv.addEventListener('pointerup',   e => { pts.delete(e.pointerId); drag = pinch = null; startGesture(); });
+cv.addEventListener('pointercancel', e => { pts.delete(e.pointerId); drag = pinch = null; });
+const pts = new Map();
+function startGesture() {
+  const a = [...pts.values()];
+  if (a.length === 1) { drag = { px: a[0].clientX, py: a[0].clientY }; pinch = null; }
+  else if (a.length >= 2) {
+    const d = Math.hypot(a[0].clientX - a[1].clientX, a[0].clientY - a[1].clientY);
+    pinch = { d, zoom: cam.zoom }; drag = null;
+  }
+}
+function moveGesture() {
+  const a = [...pts.values()];
+  if (drag && a.length === 1) {
+    cam.x -= (a[0].clientX - drag.px) / cam.zoom;
+    cam.y -= (a[0].clientY - drag.py) / cam.zoom;
+    drag.px = a[0].clientX; drag.py = a[0].clientY;
+  } else if (pinch && a.length >= 2) {
+    const d = Math.hypot(a[0].clientX - a[1].clientX, a[0].clientY - a[1].clientY);
+    cam.zoom = Math.max(cam.min, Math.min(cam.max, pinch.zoom * d / pinch.d));
+  }
+}
+addEventListener('wheel', e => {
+  cam.zoom = Math.max(cam.min, Math.min(cam.max, cam.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+}, { passive: true });
+
+// ---------- палитра «сочно, но мягко» ----------
+const COL = {
+  grassHi: '#a6d76a', grass: '#8ec658', grassLo: '#79b048',
+  soil: '#7a5334', soilHi: '#916441', furrow: '#5f3f26',
+  wood: '#c99a5f', woodHi: '#e0b877', woodLo: '#a2793f',
+  wall: '#f3e2bd', wallSide: '#dcc493', roof: '#e07a53', roofSide: '#c05f3d',
+  water: '#5fc4d8', waterHi: '#8fe0ee',
+  ink: '#4a3a2a',
+};
+
+// ---------- утилиты рисования ----------
+function tile(cx, cy, w, h, fill) {           // ромб-плитка (верхняя грань)
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - h); ctx.lineTo(cx + w, cy);
+  ctx.lineTo(cx, cy + h); ctx.lineTo(cx - w, cy); ctx.closePath();
+  ctx.fillStyle = fill; ctx.fill();
+}
+function softShadow(cx, cy, rx, ry, a = .18) {
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rx);
+  g.addColorStop(0, `rgba(40,30,15,${a})`); g.addColorStop(1, 'rgba(40,30,15,0)');
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(1, ry / rx); ctx.beginPath();
+  ctx.arc(0, 0, rx, 0, 7); ctx.fillStyle = g; ctx.fill(); ctx.restore();
+}
+
+// ---------- детерминированный декор ----------
+function rnd(s) { s = Math.sin(s * 127.1 + 311.7) * 43758.5; return s - Math.floor(s); }
+const decor = [];
+for (let gx = -14; gx <= 14; gx++) for (let gy = -14; gy <= 14; gy++) {
+  const r = rnd(gx * 57 + gy * 131);
+  if (r < .10) decor.push({ gx: gx + rnd(r) - .5, gy: gy + rnd(r * 3) - .5, t: 'flower', c: ['#ff9ec2', '#ffd95e', '#c79bff', '#ff8f6b'][(r * 40 | 0) % 4] });
+  else if (r < .17) decor.push({ gx: gx + rnd(r) - .5, gy: gy + rnd(r * 3) - .5, t: 'tuft' });
+  else if (r < .195) decor.push({ gx: gx + rnd(r) - .5, gy: gy + rnd(r * 3) - .5, t: 'stone' });
+}
+
+// ---------- объекты сцены ----------
+function bed(gx, gy, grow) {                    // грядка: рамка + земля + ряды
+  const p = iso(gx, gy), s = screen(p), z = cam.zoom;
+  const w = TW * .96 * z, h = TH * .96 * z, depthPx = 12 * z;
+  softShadow(s.x, s.y + h * .5, w * 1.15, h * 1.15, .2);
+  // боковые грани деревянного короба
+  ctx.fillStyle = COL.woodLo;
+  ctx.beginPath(); ctx.moveTo(s.x - w, s.y); ctx.lineTo(s.x, s.y + h);
+  ctx.lineTo(s.x, s.y + h + depthPx); ctx.lineTo(s.x - w, s.y + depthPx); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = COL.wood;
+  ctx.beginPath(); ctx.moveTo(s.x, s.y + h); ctx.lineTo(s.x + w, s.y);
+  ctx.lineTo(s.x + w, s.y + depthPx); ctx.lineTo(s.x, s.y + h + depthPx); ctx.closePath(); ctx.fill();
+  // верхняя рамка
+  tile(s.x, s.y, w, h, COL.woodHi);
+  // земля внутри
+  const iw = w * .78, ih = h * .78;
+  tile(s.x, s.y, iw, ih, COL.soil);
+  // борозды
+  ctx.strokeStyle = COL.furrow; ctx.lineWidth = 2 * z;
+  for (let k = -1; k <= 1; k++) {
+    const oy = k * ih * .42;
+    ctx.beginPath(); ctx.moveTo(s.x - iw * .55, s.y + oy); ctx.lineTo(s.x + iw * .55, s.y + oy); ctx.stroke();
+  }
+  // растения рядами
+  const sway = Math.sin(T * 2 + gx + gy) * 2 * z;
+  for (let r = 0; r < 3; r++) for (let cI = 0; cI < 3; cI++) {
+    const px = s.x + (cI - 1) * iw * .5, py = s.y + (r - 1) * ih * .42;
+    const gh = (8 + grow * 12) * z;
+    ctx.strokeStyle = '#5aa03e'; ctx.lineWidth = 2.4 * z; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + sway * grow, py - gh); ctx.stroke();
+    if (grow > .6) { ctx.fillStyle = '#e2603f'; ctx.beginPath(); ctx.arc(px + sway * grow, py - gh, 3.4 * z, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(px + sway * grow - 1 * z, py - gh - 1 * z, 1.2 * z, 0, 7); ctx.fill(); }
+  }
+}
+
+function house(gx, gy, kind) {                  // изо-домик с объёмом
+  const p = iso(gx, gy), s = screen(p), z = cam.zoom;
+  const bw = TW * 1.5 * z, bh = TH * 1.5 * z, wallH = 46 * z, roofH = 40 * z;
+  softShadow(s.x, s.y + bh * .6, bw * 1.5, bh * 1.4, .22);
+  const isBarn = kind === 'barn';
+  // основание footprint (для примыкания)
+  const bx = s.x, by = s.y;
+  // левая и правая стены
+  ctx.fillStyle = COL.wallSide;
+  ctx.beginPath(); ctx.moveTo(bx - bw, by); ctx.lineTo(bx, by + bh);
+  ctx.lineTo(bx, by + bh - wallH); ctx.lineTo(bx - bw, by - wallH); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = isBarn ? '#c9553c' : COL.wall;
+  ctx.beginPath(); ctx.moveTo(bx, by + bh); ctx.lineTo(bx + bw, by);
+  ctx.lineTo(bx + bw, by - wallH); ctx.lineTo(bx, by + bh - wallH); ctx.closePath(); ctx.fill();
+  // дверь + окно на правой стене
+  if (isBarn) {
+    ctx.fillStyle = '#8a3f2c';
+    ctx.beginPath(); ctx.moveTo(bx + bw * .25, by + bh * .12 - wallH * .05);
+    ctx.lineTo(bx + bw * .72, by - bh * .12 - wallH * .05);
+    ctx.lineTo(bx + bw * .72, by - bh * .12 - wallH * .62);
+    ctx.lineTo(bx + bw * .25, by + bh * .12 - wallH * .62); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#f3e2bd'; ctx.lineWidth = 3 * z;
+    ctx.beginPath(); ctx.moveTo(bx + bw * .25, by + bh * .12 - wallH * .62); ctx.lineTo(bx + bw * .72, by - bh * .12 - wallH * .05); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(bx + bw * .72, by - bh * .12 - wallH * .62); ctx.lineTo(bx + bw * .25, by + bh * .12 - wallH * .05); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#a2793f';
+    ctx.beginPath(); ctx.moveTo(bx + bw * .30, by + bh * .1 - wallH * .05);
+    ctx.lineTo(bx + bw * .55, by + bh * .0 - wallH * .05);
+    ctx.lineTo(bx + bw * .55, by - wallH * .55); ctx.lineTo(bx + bw * .30, by + bh * .1 - wallH * .55); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#bfe4ec';
+    ctx.beginPath(); ctx.moveTo(bx + bw * .68, by - bh * .06 - wallH * .2);
+    ctx.lineTo(bx + bw * .86, by - bh * .16 - wallH * .2);
+    ctx.lineTo(bx + bw * .86, by - bh * .16 - wallH * .55); ctx.lineTo(bx + bw * .68, by - bh * .06 - wallH * .55); ctx.closePath(); ctx.fill();
+  }
+  // крыша: две скошенные грани + конёк
+  const ry = by - wallH, peak = ry - roofH;
+  ctx.fillStyle = COL.roofSide;
+  ctx.beginPath(); ctx.moveTo(bx - bw, ry); ctx.lineTo(bx, ry + bh);
+  ctx.lineTo(bx, peak + bh * .0); ctx.lineTo(bx - bw * .0, peak); ctx.closePath();
+  ctx.beginPath(); ctx.moveTo(bx - bw, ry); ctx.lineTo(bx, ry + bh); ctx.lineTo(bx, peak); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = COL.roof;
+  ctx.beginPath(); ctx.moveTo(bx, ry + bh); ctx.lineTo(bx + bw, ry); ctx.lineTo(bx, peak); ctx.closePath(); ctx.fill();
+  // конёк-блик
+  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 3 * z;
+  ctx.beginPath(); ctx.moveTo(bx, ry + bh); ctx.lineTo(bx, peak); ctx.stroke();
+  // труба + дым (только дом)
+  if (!isBarn) {
+    const chx = bx - bw * .45, chy = ry - roofH * .55;
+    ctx.fillStyle = '#b06a4a'; ctx.fillRect(chx - 5 * z, chy - 16 * z, 10 * z, 22 * z);
+    for (let i = 0; i < 4; i++) {
+      const t = (T * .5 + i * .25) % 1;
+      ctx.fillStyle = `rgba(255,255,255,${.4 * (1 - t)})`;
+      ctx.beginPath(); ctx.arc(chx + Math.sin(t * 6 + i) * 8 * z, chy - 16 * z - t * 60 * z, (4 + t * 10) * z, 0, 7); ctx.fill();
+    }
+  }
+}
+
+function pond(gx, gy) {
+  const p = iso(gx, gy), s = screen(p), z = cam.zoom, w = TW * 1.7 * z, h = TH * 1.7 * z;
+  // берег
+  tile(s.x, s.y, w * 1.12, h * 1.12, '#c9b071');
+  tile(s.x, s.y, w, h, COL.water);
+  // блики воды (анимация)
+  ctx.fillStyle = COL.waterHi;
+  for (let i = 0; i < 5; i++) {
+    const ph = T * 1.5 + i * 1.3, ox = Math.sin(ph) * w * .4, oy = Math.cos(ph * .7) * h * .4;
+    ctx.globalAlpha = .5 + .3 * Math.sin(ph * 2);
+    ctx.beginPath(); ctx.ellipse(s.x + ox, s.y + oy, 6 * z, 2.5 * z, 0, 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function hen(gx, gy, ph) {                       // бродящая курочка (чиби, без жёстких контуров)
+  const wx = gx + Math.sin(T * .5 + ph) * 1.2, wy = gy + Math.cos(T * .4 + ph) * 1.2;
+  const p = iso(wx, wy), s = screen(p), z = cam.zoom;
+  const bob = Math.abs(Math.sin(T * 4 + ph)) * 3 * z;
+  softShadow(s.x, s.y + 2 * z, 12 * z, 5 * z, .22);
+  ctx.fillStyle = '#f6efdf';
+  ctx.beginPath(); ctx.ellipse(s.x, s.y - 9 * z - bob, 9 * z, 8 * z, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#e2725a';
+  ctx.beginPath(); ctx.arc(s.x + 5 * z, s.y - 15 * z - bob, 2 * z, 0, 7); ctx.fill();
+  ctx.fillStyle = '#eda63f';
+  ctx.beginPath(); ctx.moveTo(s.x + 8 * z, s.y - 11 * z - bob); ctx.lineTo(s.x + 13 * z, s.y - 10 * z - bob); ctx.lineTo(s.x + 8 * z, s.y - 9 * z - bob); ctx.fill();
+  ctx.fillStyle = '#4a3b2e';
+  ctx.beginPath(); ctx.arc(s.x + 5 * z, s.y - 12 * z - bob, 1.1 * z, 0, 7); ctx.fill();
+}
+
+function cow(gx, gy, ph) {
+  const wx = gx + Math.sin(T * .3 + ph) * 1.5;
+  const p = iso(wx, gy), s = screen(p), z = cam.zoom;
+  const bob = Math.abs(Math.sin(T * 3 + ph)) * 2 * z;
+  softShadow(s.x, s.y + 3 * z, 18 * z, 7 * z, .22);
+  ctx.fillStyle = '#f5f0e4';
+  ctx.beginPath(); ctx.ellipse(s.x, s.y - 12 * z - bob, 15 * z, 11 * z, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#c9b89a';
+  ctx.beginPath(); ctx.ellipse(s.x - 5 * z, s.y - 14 * z - bob, 4 * z, 3 * z, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#f3c1b4';
+  ctx.beginPath(); ctx.ellipse(s.x + 10 * z, s.y - 9 * z - bob, 5 * z, 4 * z, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#4a3b2e';
+  ctx.beginPath(); ctx.arc(s.x + 8 * z, s.y - 13 * z - bob, 1.2 * z, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(s.x + 12 * z, s.y - 13 * z - bob, 1.2 * z, 0, 7); ctx.fill();
+}
+
+// ---------- сцена (органичная раскладка) ----------
+const scene = [];
+function add(gx, gy, draw) { scene.push({ gx, gy, gz: 0, draw }); }
+// грядки органично
+[[-2, -1, .3], [-1, -1, .7], [-2, 0, 1], [0, -2, .5], [1, -2, .9], [-1, 1, .8], [0, 1, .4], [1, 0, 1]].forEach(([x, y, g]) => add(x, y, () => bed(x, y, g)));
+// постройки
+add(-4, -3, () => house(-4, -3, 'home'));
+add(3, -4, () => house(3, -4, 'barn'));
+// пруд
+add(4, 2, () => pond(4, 2));
+// животные
+add(2, 2, () => hen(2, 2, 0));
+add(3, 1, () => hen(3, 1, 2));
+add(-3, 2, () => cow(-3, 2, 1));
+
+// ---------- облака (парят над сценой, экранное пространство привязано к камере слабо) ----------
+const clouds = [];
+for (let i = 0; i < 6; i++) clouds.push({ x: rnd(i * 9) * 3000 - 1000, y: rnd(i * 3) * 500 - 400, s: .8 + rnd(i) * .8, sp: 8 + rnd(i * 7) * 10 });
+
+// ---------- главный цикл ----------
+let T = 0, last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now; T += dt;
+  ctx.save(); ctx.scale(DPR, DPR);
+
+  // небо/луг с дымкой на краях
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#bfe3c0'); bg.addColorStop(.32, '#9fd47f'); bg.addColorStop(1, COL.grass);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // травяные полосы (мягкая текстура земли)
+  for (let d = -20; d <= 20; d++) {
+    const a = iso(-20, d), b = iso(20, d), sa = screen(a), sb = screen(b);
+    ctx.strokeStyle = (d % 2 ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.03)');
+    ctx.lineWidth = TH * cam.zoom; ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y); ctx.stroke();
+  }
+
+  // облака (за сценой, с лёгким параллаксом)
+  for (const c of clouds) {
+    c.x += c.sp * dt;
+    if (c.x > 2200) c.x = -600;
+    const sx = W / 2 + (c.x - cam.x * .3), sy = H / 2 + (c.y - cam.y * .3);
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    for (const [ox, oy, r] of [[0, 0, 34], [34, 6, 26], [-30, 8, 24], [10, -10, 22]]) {
+      ctx.beginPath(); ctx.arc(sx + ox * c.s, sy + oy * c.s, r * c.s, 0, 7); ctx.fill();
+    }
+  }
+
+  // декор + объекты, сортировка по глубине
+  const items = [];
+  for (const d of decor) items.push({ d: depth(d.gx, d.gy), draw: () => drawDecor(d) });
+  for (const o of scene) items.push({ d: depth(o.gx, o.gy), draw: o.draw });
+  items.sort((a, b) => a.d - b.d);
+  for (const it of items) it.draw();
+
+  // виньетка-дымка по краям (ощущение простора/дали)
+  const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .35, W / 2, H / 2, Math.max(W, H) * .75);
+  vg.addColorStop(0, 'rgba(191,227,192,0)'); vg.addColorStop(1, 'rgba(200,230,205,.55)');
+  ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+
+  ctx.restore();
+  requestAnimationFrame(frame);
+}
+function drawDecor(d) {
+  const p = iso(d.gx, d.gy), s = screen(p), z = cam.zoom;
+  if (d.t === 'flower') {
+    const sway = Math.sin(T * 2 + d.gx * 3) * 2 * z;
+    ctx.strokeStyle = '#5aa03e'; ctx.lineWidth = 1.6 * z;
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + sway, s.y - 9 * z); ctx.stroke();
+    ctx.fillStyle = d.c;
+    for (let k = 0; k < 5; k++) { const a = k / 5 * 6.28; ctx.beginPath(); ctx.arc(s.x + sway + Math.cos(a) * 3 * z, s.y - 9 * z + Math.sin(a) * 3 * z, 2 * z, 0, 7); ctx.fill(); }
+    ctx.fillStyle = '#ffd95e'; ctx.beginPath(); ctx.arc(s.x + sway, s.y - 9 * z, 1.8 * z, 0, 7); ctx.fill();
+  } else if (d.t === 'tuft') {
+    ctx.strokeStyle = COL.grassLo; ctx.lineWidth = 1.8 * z; ctx.lineCap = 'round';
+    for (let k = -1; k <= 1; k++) { const sway = Math.sin(T * 2 + d.gx + k) * 2 * z;
+      ctx.beginPath(); ctx.moveTo(s.x + k * 3 * z, s.y); ctx.lineTo(s.x + k * 3 * z + sway, s.y - 8 * z); ctx.stroke(); }
+  } else {
+    softShadow(s.x, s.y + 2 * z, 8 * z, 3 * z, .15);
+    ctx.fillStyle = '#b9b3a6'; ctx.beginPath(); ctx.ellipse(s.x, s.y - 2 * z, 6 * z, 4 * z, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#d2ccbf'; ctx.beginPath(); ctx.ellipse(s.x - 1 * z, s.y - 3.5 * z, 3 * z, 2 * z, 0, 0, 7); ctx.fill();
+  }
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
