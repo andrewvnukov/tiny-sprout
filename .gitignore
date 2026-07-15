@@ -7,3 +7,7 @@ assets/kenney-farm/Angle/
 assets/kenney-farm/Samples/
 assets/kenney-bases/Angle/
 assets/kenney-bases/Samples/
+
+# разведка ассетов (не используем — остались на процедурном векторе)
+assets/
+poc-sprites.html
