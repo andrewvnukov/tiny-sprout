@@ -448,40 +448,73 @@ function simulate(dt) {
     checkAch();
 }
 
-// ---------- Раскладка мира (общая для рендера и инпута) ----------
-const PLOT_W = 2.7, PLOT_H = 1.55;
-const ZONE_Y = [ 2, 6.4, 10.8 ];
-const HORIZON = 15.4;
-function plotPos(i) {
+// ---------- Изометрическая раскладка (общая для рендера и инпута) ----------
+const IW = 1.42, IH = 0.72;                       // половина ромба плитки (world)
+function isoWorld(gx, gy) { return vec2((gx - gy) * IW, -(gx + gy) * IH); }
+const isoDepth = (gx, gy) => gx + gy;             // больше = ближе к зрителю (рисуем позже)
+
+// сетка грядок: 3 зоны по 8 (4×2), стопкой в глубину
+function plotGrid(i) {
     const z = Math.floor(i / 8), li = i % 8;
-    return vec2(-4.55 + (li%4)*3.05, ZONE_Y[z] + Math.floor(li/4)*2);
+    return { gx: (li % 4) - 1.5, gy: Math.floor(li / 4) + z * 3 };
 }
-function fitCamera() {
-    const w = mainCanvasSize.x, h = mainCanvasSize.y;
-    setCameraScale(Math.min(w / 12.9, h / 22));
-    setCameraPos(vec2(0, 9.8));
+function plotPos(i) { const g = plotGrid(i); return isoWorld(g.gx, g.gy); }
+function zoneCenterGrid(z) { return { gx: 0, gy: z * 3 + 0.5 }; }
+function zoneSignPos(z) { const g = zoneCenterGrid(z); return isoWorld(g.gx, g.gy); }
+// постройки (grid) — используются рендером
+const HOUSE_G = { gx: 3.2, gy: -2.4 };
+const BARN_G  = { gx: -3.8, gy: -1.2 };
+const POND_G  = { gx: 3.4, gy: 6.2 };
+const FIELD_CX = -4.9, FIELD_CY = -2.6;           // центр поля (world)
+
+// ---------- Камера: пан + зум ----------
+let camX = FIELD_CX, camY = FIELD_CY, camScale = 30, camMin = 14, camMax = 74;
+let panning = false, downMoved = 0, lastScreen = null;
+function initCamera() {
+    const cw = mainCanvasSize.x, ch = mainCanvasSize.y;
+    camMin = Math.max(10, Math.min(cw / 26, ch / 18));
+    camScale = Math.max(camMin, Math.min(camMax, Math.min(cw / 19, ch / 14)));
+    camX = FIELD_CX; camY = FIELD_CY;
+    clampCam();
+}
+function clampCam() {
+    camX = Math.max(-14, Math.min(4, camX));
+    camY = Math.max(-8.5, Math.min(3.5, camY));
+    camScale = Math.max(camMin, Math.min(camMax, camScale));
+}
+function cameraControl() {
+    if (typeof mouseWheel !== 'undefined' && mouseWheel)
+        camScale *= mouseWheel < 0 ? 1.12 : 1 / 1.12;
+    const scr = () => (typeof mousePosScreen !== 'undefined' && mousePosScreen) ? mousePosScreen : worldToScreen(mousePos);
+    if (mouseWasPressed(0)) { lastScreen = scr().copy(); downMoved = 0; panning = false; }
+    if (mouseIsDown(0) && lastScreen) {
+        const cur = scr();
+        const d = cur.subtract(lastScreen);
+        lastScreen = cur.copy();
+        downMoved += Math.abs(d.x) + Math.abs(d.y);
+        if (downMoved > 7) panning = true;
+        if (panning) { camX -= d.x / camScale; camY += d.y / camScale; }
+    }
+    clampCam();
 }
 
-// ---------- Инпут по полю ----------
+// ---------- Инпут по полю (тап vs перетаскивание) ----------
 function fieldInput() {
-    if (!mouseWasPressed(0) || uiBlocked()) return;
+    if (!mouseWasReleased(0)) return;
+    if (panning || uiBlocked()) { panning = false; return; }
     const m = mousePos;
-    // грядки
-    for (let i = 0; i < S.plots.length; i++) {
-        const p = plotPos(i);
-        if (Math.abs(m.x-p.x) < PLOT_W/2 + .2 && Math.abs(m.y-p.y) < PLOT_H/2 + .3) { tapPlot(i); return; }
-    }
-    // призрачная грядка «+»
     const owned = S.plots.length;
     const maxNow = ZONES.slice(0, S.zones).reduce((s,z)=>s+z.plots, 0);
-    if (owned < maxNow) {
-        const p = plotPos(owned);
-        if (Math.abs(m.x-p.x) < PLOT_W/2 + .2 && Math.abs(m.y-p.y) < PLOT_H/2 + .3) { buyPlot(); return; }
-    }
-    // табличка закрытой зоны
+    // ближайший ромб (метрика ромба: |dx|/IW + |dy|/IH < 1 = внутри)
+    let best = null, bd = 1e9;
+    const consider = (id, p) => { const d = Math.abs(m.x-p.x)/IW + Math.abs(m.y-p.y)/IH; if (d < bd) { bd = d; best = id; } };
+    for (let i = 0; i < owned; i++) consider(i, plotPos(i));
+    if (owned < maxNow) consider('+', plotPos(owned));
+    if (best !== null && bd < 1.25) { best === '+' ? buyPlot() : tapPlot(best); return; }
+    // табличка следующей зоны
     if (S.zones < ZONES.length) {
-        const zy = ZONE_Y[S.zones] + 1;
-        if (Math.abs(m.x) < 4 && Math.abs(m.y - zy) < 1.6) { buyZone(); return; }
+        const sp = zoneSignPos(S.zones);
+        if (Math.abs(m.x-sp.x) < 2.4 && m.y > sp.y - .4 && m.y < sp.y + 2) { buyZone(); return; }
     }
 }
 
@@ -510,16 +543,34 @@ function gameInit() {
     // ВАЖНО: S здесь ещё может быть null — boot() приходит позже (после SDK/фолбэка)
     setFontDefault('Neucha, sans-serif');
     try { document.fonts.load('20px Neucha'); } catch(e) {}
-    fitCamera();
+    initCamera();
+    initPinch();
     initWorldDecor();
 }
 function gameUpdate() {
     if (!booted) return;
     simulate(timeDelta);
+    cameraControl();
     fieldInput();
-    if (mouseWasPressed(0) && !S.mute && !musicOn) startMusic();
+    if (mouseWasReleased(0) && !panning && !S.mute && !musicOn) startMusic();
 }
-function gameUpdatePost() { fitCamera(); }
+function gameUpdatePost() { setCameraPos(vec2(camX, camY)); setCameraScale(camScale); }
+
+// ---------- Зум щипком (two-finger pinch) ----------
+function initPinch() {
+    const cv = (typeof mainCanvas !== 'undefined') ? mainCanvas : document.querySelector('canvas');
+    if (!cv) return;
+    let pd = 0;
+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    cv.addEventListener('touchstart', e => { if (e.touches.length === 2) { pd = dist(e.touches); panning = true; } }, { passive: true });
+    cv.addEventListener('touchmove', e => {
+        if (e.touches.length === 2 && pd) {
+            const d = dist(e.touches);
+            camScale *= d / pd; pd = d; panning = true; clampCam();
+        }
+    }, { passive: true });
+    cv.addEventListener('touchend', e => { if (e.touches.length < 2) pd = 0; }, { passive: true });
+}
 function gameRender() { if (booted) renderWorld(); }
 function gameRenderPost() { if (booted) renderWorldUI(); }
 
