@@ -543,6 +543,9 @@ function gameInit() {
     // ВАЖНО: S здесь ещё может быть null — boot() приходит позже (после SDK/фолбэка)
     setFontDefault('Neucha, sans-serif');
     try { document.fonts.load('20px Neucha'); } catch(e) {}
+    // не глушим touch глобально — иначе DOM-кнопки не жмутся на телефоне;
+    // прокрутку страницы держит touch-action:none в CSS
+    try { setInputPreventDefault(false); } catch(e) {}
     initCamera();
     initPinch();
     initWorldDecor();

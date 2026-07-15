@@ -132,17 +132,20 @@ function renderWorld() {
     drawParticles();
 }
 
+let _GT = null;                                 // переиспользуемые вершины ромба (без аллокаций в цикле)
 function drawGroundTiles(L, Rt, T, B) {
-    // границы grid из углов вида
+    if (!_GT) _GT = [vec2(0, IH), vec2(IW, 0), vec2(0, -IH), vec2(-IW, 0)];
+    const cA = C('#98bd66'), cB = C('#a1c66e');
+    // границы grid из углов вида, но не шире области фермы
     const toG = (X, Y) => ({ gx: (X / IW - Y / IH) / 2, gy: (-Y / IH - X / IW) / 2 });
     const cs = [toG(L, T), toG(Rt, T), toG(L, B), toG(Rt, B)];
     let gxmin = 1e9, gxmax = -1e9, gymin = 1e9, gymax = -1e9;
     for (const c of cs) { gxmin = Math.min(gxmin, c.gx); gxmax = Math.max(gxmax, c.gx); gymin = Math.min(gymin, c.gy); gymax = Math.max(gymax, c.gy); }
-    gxmin = Math.floor(gxmin) - 1; gxmax = Math.ceil(gxmax) + 1; gymin = Math.floor(gymin) - 1; gymax = Math.ceil(gymax) + 1;
-    if ((gxmax - gxmin) * (gymax - gymin) > 1600) return; // защита от перегруза на большом зуме
+    gxmin = Math.max(-10, Math.floor(gxmin) - 1); gxmax = Math.min(10, Math.ceil(gxmax) + 1);
+    gymin = Math.max(-8, Math.floor(gymin) - 1);  gymax = Math.min(14, Math.ceil(gymax) + 1);
     for (let gx = gxmin; gx <= gxmax; gx++)
         for (let gy = gymin; gy <= gymax; gy++)
-            isoTile(isoWorld(gx, gy), IW, IH, (gx + gy) & 1 ? C('#98bd66') : C('#a1c66e'));
+            drawPoly(_GT, (gx + gy) & 1 ? cA : cB, 0, undefined, isoWorld(gx, gy));
 }
 
 // ---------- Зоны, тропинки ----------

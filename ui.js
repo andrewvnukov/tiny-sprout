@@ -130,8 +130,18 @@ function closeModal(id) { $(id).classList.remove('open'); }
 function openModal(id) { $(id).classList.add('open'); }
 
 // ---------- HUD ----------
+let _prevCoins = null, _prevSeeds = null;
+function popChip(id) {
+    const el = $(id); if (!el) return;
+    el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+}
 function renderHud() {
-    $('coinVal').textContent = fmt(S.coins);
+    const coinTxt = fmt(S.coins);
+    if (_prevCoins !== null && coinTxt !== _prevCoins) popChip('coinChip');
+    _prevCoins = coinTxt;
+    if (_prevSeeds !== null && S.seeds !== _prevSeeds) popChip('seedChip');
+    _prevSeeds = S.seeds;
+    $('coinVal').textContent = coinTxt;
     $('seedVal').textContent = fmt(S.seeds);
     $('ipsVal').textContent  = (S.ips >= .5 ? fmt(S.ips) : '0') + '/с';
     $('seedChip').style.display = (S.seeds > 0 || pendingSeeds() > 0 || S.cnt.prestiges > 0) ? '' : 'none';

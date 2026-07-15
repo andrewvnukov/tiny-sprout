@@ -1,0 +1,17 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const ctx = await b.newContext({ viewport:{width:420,height:800}, hasTouch:true, isMobile:true });
+const p = await ctx.newPage();
+await p.goto('http://localhost:8347/');
+await p.waitForFunction(()=>window.render_game_to_text&&(()=>{try{return !!JSON.parse(window.render_game_to_text()).plots}catch(e){return false}})(),null,{timeout:15000});
+await p.waitForTimeout(700);
+const res={};
+await p.tap('#shopFab'); await p.waitForTimeout(350);
+res.shop = await p.evaluate(()=>document.getElementById('shopSheet').classList.contains('open'));
+await p.tap('#shopSheet .close'); await p.waitForTimeout(350);
+res.closed = await p.evaluate(()=>!document.getElementById('shopSheet').classList.contains('open'));
+await p.tap('#barnFab'); await p.waitForTimeout(350);
+res.barn = await p.evaluate(()=>document.getElementById('barnSheet').classList.contains('open'));
+console.log('shopFab opens:',res.shop,'| close works:',res.closed,'| barnFab opens:',res.barn);
+console.log((res.shop&&res.closed&&res.barn)?'TOUCH BUTTONS OK':'FAIL');
+await b.close();
