@@ -22,30 +22,35 @@ function isoTile(pos, hw, hh, col) {
 function quad(pos, a, b, c, d, col) { drawPoly([a, b, c, d], col, 0, undefined, pos); }
 function L2(a, b, t) { return vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t); }
 
-// ---------- Декор (генерится один раз, в grid-координатах) ----------
-let decor = null;
-function overPlots(gx, gy) {
-    for (let i = 0; i < MAXPLOTS; i++) {
-        const g = plotGrid(i);
-        if (Math.abs(gx - g.gx) < 1.1 && Math.abs(gy - g.gy) < 1.1) return true;
-    }
-    // зона построек/пруда
-    for (const b of [HOUSE_G, BARN_G, POND_G])
-        if (Math.abs(gx - b.gx) < 1.6 && Math.abs(gy - b.gy) < 1.6) return true;
-    return false;
+// ---------- Занятость клеток + декор (строго по сетке) ----------
+let decor = null, OCC = null;
+const cellKey = (gx, gy) => gx + ',' + gy;
+function buildOcc() {
+    OCC = new Set();
+    for (let i = 0; i < MAXPLOTS; i++) { const g = plotGrid(i); OCC.add(cellKey(g.gx, g.gy)); }
+    for (const [gx, gy] of PATH_CELLS) OCC.add(cellKey(gx, gy));
+    for (const b of [BARN_G, HOUSE_G, POND_G])                  // здания занимают 3×3
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) OCC.add(cellKey(b.gx + dx, b.gy + dy));
+    for (let gx = 0; gx <= 3; gx++) for (let gy = 9; gy <= 10; gy++) OCC.add(cellKey(gx, gy)); // загон
 }
+const cellFree = (gx, gy) => !OCC.has(cellKey(gx, gy));
 function initWorldDecor() {
+    buildOcc();
     const R = (a, b) => a + Math.random() * (b - a);
-    const scatter = (n, gen) => { const o = []; let tries = 0;
-        while (o.length < n && tries++ < n * 6) { const e = gen(); if (!overPlots(e.gx, e.gy)) o.push(e); } return o; };
+    const cells = [];
+    for (let gx = -5; gx <= 8; gx++) for (let gy = -4; gy <= 8; gy++) if (cellFree(gx, gy)) cells.push([gx, gy]);
+    for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
+    let idx = 0;
+    const mk = (n, f) => { const o = []; for (let k = 0; k < n && idx < cells.length; k++) o.push(f(cells[idx++])); return o; };
     decor = {
         clouds: Array.from({ length: 5 }, () => ({ x: R(-16, 16), y: R(3, 8), s: R(.9, 1.7), v: R(.05, .14) })),
-        trees:  Array.from({ length: 7 }, () => ({ gx: R(-6, 6), gy: R(-6.5, -4), s: R(.8, 1.25) })),
-        flowers: scatter(26, () => ({ gx: R(-6.5, 6.5), gy: R(-4, 10.5), s: R(.1, .15), h: ['#eda3b4', '#f2d98a', '#f7f2e4', '#c3a8dd'][Math.floor(R(0, 4))] })),
-        grass:  scatter(60, () => ({ gx: R(-7, 7), gy: R(-4.5, 11), s: R(.14, .26) })),
-        stones: scatter(9,  () => ({ gx: R(-7, 7), gy: R(-4, 10.5), s: R(.12, .22) })),
-        btf:    Array.from({ length: 4 }, () => ({ x: R(-8, 2), y: R(-5, 0), p: R(0, 9) })),
+        flowers: mk(14, c => ({ gx: c[0], gy: c[1], s: R(.1, .15), h: ['#eda3b4', '#f2d98a', '#f7f2e4', '#c3a8dd'][Math.floor(R(0, 4))] })),
+        grass:   mk(20, c => ({ gx: c[0], gy: c[1], s: R(.16, .26) })),
+        stones:  mk(6,  c => ({ gx: c[0], gy: c[1], s: R(.12, .22) })),
+        trees: [],
+        btf: Array.from({ length: 4 }, () => ({ x: R(-8, 2), y: R(-5, 0), p: R(0, 9) })),
     };
+    for (let gx = -3; gx <= 6; gx++) if (cellFree(gx, -3)) decor.trees.push({ gx, gy: -3, s: R(.85, 1.15) }); // ряд деревьев сзади
 }
 
 // ---------- Эффекты ----------
@@ -83,6 +88,7 @@ function renderWorld() {
     // луг-подложка
     drawRect(vec2(midX, midY), vec2(w, h), C('#9cc06a'));
     drawGroundTiles(L, Rt, T, B);
+    drawPathCells();
 
     // облака (фон, без сортировки)
     for (const c of decor.clouds) {
@@ -101,9 +107,6 @@ function renderWorld() {
     for (let z = 0; z < ZONES.length; z++) {
         if (z <= S.zones) { const zz = z; push(0, zoneCenterGrid(zz).gy, () => drawZoneRegion(zz), -6); }
     }
-    // тропинки под зонами
-    push(0, 0, drawPaths, -5.5);
-
     // деревья (задний план)
     for (const t of decor.trees) push(t.gx, t.gy, () => drawTree(isoWorld(t.gx, t.gy), t.s));
     // постройки
@@ -158,12 +161,12 @@ function drawZoneRegion(z) {
         isoTile(p, IW, IH, unlocked ? (z === 2 ? C('#b3d089') : C('#a9c97e')) : new Color(.55, .62, .42, .5));
     }
 }
-function drawPaths() {
-    // тропинка вдоль центральной оси поля между зонами
-    for (let gy = -1; gy <= S.zones * 3 + 1; gy++) {
-        const p = isoWorld(2, gy);
-        isoTile(p, IW * .96, IH * .96, C('#c9b083'));
-        isoTile(p, IW * .8, IH * .8, C('#d3bd93'));
+function drawPathCells() {
+    // грунтовые тропинки-разделители между зонами, строго по клеткам
+    for (const [gx, gy] of PATH_CELLS) {
+        const p = isoWorld(gx, gy);
+        isoTile(p, IW * .98, IH * .98, C('#c9b083'));
+        isoTile(p, IW * .84, IH * .84, C('#d3bd93'));
     }
 }
 
@@ -254,22 +257,23 @@ function drawFlower(p, s, h) {
 
 // ---------- Грядки ----------
 function drawBedIso(pos) {
-    drawEllipse(pos.add(vec2(0, -IH * .55)), vec2(IW * 1.05, IH * .55), SHADOW);
-    const dep = .42;
-    const Lp = vec2(-IW, 0), Bt = vec2(0, -IH), Rp = vec2(IW, 0);
+    // короб чуть меньше клетки — по краям видна трава (грядки строго на квадратах)
+    const hw = IW * .88, hh = IH * .88, dep = .4;
+    drawEllipse(pos.add(vec2(0, -hh * .55)), vec2(hw * 1.05, hh * .55), SHADOW);
+    const Lp = vec2(-hw, 0), Bt = vec2(0, -hh), Rp = vec2(hw, 0);
     // боковые доски короба
     quad(pos, Lp, Bt, Bt.add(vec2(0, -dep)), Lp.add(vec2(0, -dep)), C('#9c7139'));
     quad(pos, Bt, Rp, Rp.add(vec2(0, -dep)), Bt.add(vec2(0, -dep)), C('#c99a5f'));
     // верхняя рамка
-    isoTile(pos, IW, IH, C('#dbb884'));
+    isoTile(pos, hw, hh, C('#dbb884'));
     // земля
-    const iw = IW * .72, ih = IH * .72;
+    const iw = hw * .76, ih = hh * .76;
     isoTile(pos, iw, ih, C('#7a5334'));
     // борозды (вдоль оси +gx)
-    const ed = vec2(IW, -IH).scale(.5), pv = vec2(IW, IH);
+    const ed = vec2(hw, -hh).scale(.5), pv = vec2(hw, hh);
     for (let k = -1; k <= 1; k++) {
-        const off = pv.scale(k * .2 * .72);
-        drawLine(pos.add(off.subtract(ed.scale(.62))), pos.add(off.add(ed.scale(.62))), .05, C('#5f3f26'));
+        const off = pv.scale(k * .22);
+        drawLine(pos.add(off.subtract(ed.scale(.6))), pos.add(off.add(ed.scale(.6))), .05, C('#5f3f26'));
     }
 }
 function drawGhostPlot(idx) {
@@ -407,7 +411,7 @@ function syncAnimals() {
     for (const a of ANIMALS) for (let k = 0; k < S.animals[a.id]; k++) want.push(a.id);
     while (animEnts.length > want.length) animEnts.pop();
     while (animEnts.length < want.length) {
-        const gx = -2 + Math.random() * 3, gy = 8.5 + Math.random() * 2;
+        const gx = .2 + Math.random() * 2.6, gy = 9 + Math.random();
         animEnts.push({ id: want[animEnts.length], gx, gy, dir: Math.random() < .5 ? 1 : -1, v: .3 + Math.random() * .3, ph: Math.random() * 9 });
     }
     for (let i = 0; i < want.length; i++) animEnts[i].id = want[i];
@@ -418,7 +422,7 @@ function pushAnimals(push) {
     if (animEnts.length) push(0, 9.5, drawPaddockFence, -.2);
     for (const a of animEnts) {
         a.gx += a.dir * a.v * timeDelta * .5;
-        if (a.gx > 1.5) a.dir = -1; if (a.gx < -2.5) a.dir = 1;
+        if (a.gx > 3.2) a.dir = -1; if (a.gx < -.2) a.dir = 1;
         push(a.gx, a.gy, () => {
             const bob = Math.abs(Math.sin(time * 4 + a.ph)) * .06;
             const p = isoWorld(a.gx, a.gy).add(vec2(0, .06 + bob));
@@ -429,12 +433,12 @@ function pushAnimals(push) {
 }
 function drawPaddockFence() {
     // лёгкий штакетник по фронтальной грани загона
-    for (let gx = -3; gx <= 2; gx += .6) {
-        const p = isoWorld(gx, 10.4);
+    for (let gx = -.2; gx <= 3.4; gx += .6) {
+        const p = isoWorld(gx, 10.6);
         drawRect(p.add(vec2(0, .28)), vec2(.1, .5), C('#efe4cb'));
     }
-    drawEllipse(isoWorld(-2.6, 9.4), vec2(.5, .26), C('#e2c878'));
-    drawEllipse(isoWorld(-2.6, 9.4).add(vec2(-.08, .1)), vec2(.34, .18), C('#eed88f'));
+    drawEllipse(isoWorld(.2, 9), vec2(.5, .26), C('#e2c878'));
+    drawEllipse(isoWorld(.2, 9).add(vec2(-.08, .1)), vec2(.34, .18), C('#eed88f'));
 }
 function drawHen(p, dir) {
     drawEllipse(p.add(vec2(0, .2)), vec2(.36, .3), C('#f7ecd4'));

@@ -448,73 +448,114 @@ function simulate(dt) {
     checkAch();
 }
 
-// ---------- Изометрическая раскладка (общая для рендера и инпута) ----------
+// ---------- Изометрическая раскладка (строгая целочисленная сетка) ----------
 const IW = 1.42, IH = 0.72;                       // половина ромба плитки (world)
 function isoWorld(gx, gy) { return vec2((gx - gy) * IW, -(gx + gy) * IH); }
-const isoDepth = (gx, gy) => gx + gy;             // больше = ближе к зрителю (рисуем позже)
-
-// сетка грядок: 3 зоны по 8 (4×2), стопкой в глубину
+// грядки: 3 зоны по 8 (4×2 клетки), стопкой в глубину, ряд-разделитель между зонами
 function plotGrid(i) {
     const z = Math.floor(i / 8), li = i % 8;
-    return { gx: (li % 4) - 1.5, gy: Math.floor(li / 4) + z * 3 };
+    return { gx: li % 4, gy: Math.floor(li / 4) + z * 3 };
 }
 function plotPos(i) { const g = plotGrid(i); return isoWorld(g.gx, g.gy); }
-function zoneCenterGrid(z) { return { gx: 0, gy: z * 3 + 0.5 }; }
+function zoneCenterGrid(z) { return { gx: 1.5, gy: z * 3 + 0.5 }; }
 function zoneSignPos(z) { const g = zoneCenterGrid(z); return isoWorld(g.gx, g.gy); }
-// постройки (grid) — используются рендером
-const HOUSE_G = { gx: 3.2, gy: -2.4 };
-const BARN_G  = { gx: -3.8, gy: -1.2 };
-const POND_G  = { gx: 3.4, gy: 6.2 };
-const FIELD_CX = -4.9, FIELD_CY = -2.6;           // центр поля (world)
+// постройки/пруд — на своих клетках (используются рендером)
+const BARN_G  = { gx: -2, gy: 1 };
+const HOUSE_G = { gx: -2, gy: 5 };
+const POND_G  = { gx: 5, gy: 6 };
+const PATH_CELLS = [];
+for (let gx = 0; gx <= 3; gx++) { PATH_CELLS.push([gx, 2]); PATH_CELLS.push([gx, 5]); }
+const FIELD_CX = -2.84, FIELD_CY = -3.6;          // центр поля (world)
 
-// ---------- Камера: пан + зум ----------
-let camX = FIELD_CX, camY = FIELD_CY, camScale = 30, camMin = 14, camMax = 74;
-let panning = false, downMoved = 0, lastScreen = null;
+// ---------- Камера: пан + зум (прямые pointer-события, якорные) ----------
+let camX = FIELD_CX, camY = FIELD_CY, camScale = 30, camMin = 14, camMax = 78;
 function initCamera() {
     const cw = mainCanvasSize.x, ch = mainCanvasSize.y;
-    camMin = Math.max(10, Math.min(cw / 26, ch / 18));
-    camScale = Math.max(camMin, Math.min(camMax, Math.min(cw / 19, ch / 14)));
+    camMin = Math.max(10, Math.min(cw / 30, ch / 20));
+    camScale = Math.max(camMin, Math.min(camMax, Math.min(cw / 18, ch / 14)));
     camX = FIELD_CX; camY = FIELD_CY;
-    clampCam();
+    applyCam();
 }
 function clampCam() {
-    camX = Math.max(-14, Math.min(4, camX));
-    camY = Math.max(-8.5, Math.min(3.5, camY));
+    camX = Math.max(-14, Math.min(8, camX));
+    camY = Math.max(-10, Math.min(3, camY));
     camScale = Math.max(camMin, Math.min(camMax, camScale));
 }
-function cameraControl() {
-    if (typeof mouseWheel !== 'undefined' && mouseWheel)
-        camScale *= mouseWheel < 0 ? 1.12 : 1 / 1.12;
-    const scr = () => (typeof mousePosScreen !== 'undefined' && mousePosScreen) ? mousePosScreen : worldToScreen(mousePos);
-    if (mouseWasPressed(0)) { lastScreen = scr().copy(); downMoved = 0; panning = false; }
-    if (mouseIsDown(0) && lastScreen) {
-        const cur = scr();
-        const d = cur.subtract(lastScreen);
-        lastScreen = cur.copy();
-        downMoved += Math.abs(d.x) + Math.abs(d.y);
-        if (downMoved > 7) panning = true;
-        if (panning) { camX -= d.x / camScale; camY += d.y / camScale; }
-    }
-    clampCam();
-}
+function applyCam() { clampCam(); setCameraPos(vec2(camX, camY)); setCameraScale(camScale); }
 
-// ---------- Инпут по полю (тап vs перетаскивание) ----------
-function fieldInput() {
-    if (!mouseWasReleased(0)) return;
-    if (panning || uiBlocked()) { panning = false; return; }
-    const m = mousePos;
-    const owned = S.plots.length;
-    const maxNow = ZONES.slice(0, S.zones).reduce((s,z)=>s+z.plots, 0);
-    // ближайший ромб (метрика ромба: |dx|/IW + |dy|/IH < 1 = внутри)
+// перевод указателя (clientX/Y → canvas-пиксели → мир)
+function ptrCanvas(cx, cy) {
+    const r = mainCanvas.getBoundingClientRect();
+    return vec2((cx - r.left) / r.width * mainCanvasSize.x, (cy - r.top) / r.height * mainCanvasSize.y);
+}
+function ptrWorld(cx, cy) { return screenToWorld(ptrCanvas(cx, cy)); }
+
+const _ptrs = new Map();
+let _tapId = null, _tapMoved = 0, _pinchDist = 0;
+function initCameraInput() {
+    const cvs = document.querySelectorAll('canvas');
+    const el = cvs[cvs.length - 1] || mainCanvas;
+    el.addEventListener('pointerdown', onDown);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+    el.addEventListener('wheel', onWheel, { passive: false });
+}
+function twoDist() { const a = [..._ptrs.values()]; return Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); }
+function twoMid() { const a = [..._ptrs.values()]; return ptrCanvas((a[0].x + a[1].x) / 2, (a[0].y + a[1].y) / 2); }
+function onDown(e) {
+    try { e.target.setPointerCapture(e.pointerId); } catch (x) {}
+    _ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (_ptrs.size === 1) { _tapId = e.pointerId; _tapMoved = 0; }
+    else { _tapId = null; if (_ptrs.size === 2) _pinchDist = twoDist(); }
+    if (booted && !S.mute && !musicOn) startMusic();
+}
+function onMove(e) {
+    const p = _ptrs.get(e.pointerId); if (!p) return;
+    const ox = p.x, oy = p.y; p.x = e.clientX; p.y = e.clientY;
+    if (_ptrs.size >= 2) {                        // якорный зум-щипок
+        _tapId = null;
+        const nd = twoDist();
+        if (_pinchDist > 0 && nd > 0) {
+            const mid = twoMid(), wB = screenToWorld(mid);
+            camScale = Math.max(camMin, Math.min(camMax, camScale * nd / _pinchDist));
+            setCameraScale(camScale);
+            const wA = screenToWorld(mid);
+            camX += wB.x - wA.x; camY += wB.y - wA.y; applyCam();
+        }
+        _pinchDist = nd;
+    } else if (_tapId === e.pointerId) {          // якорный пан
+        _tapMoved += Math.abs(e.clientX - ox) + Math.abs(e.clientY - oy);
+        const wP = ptrWorld(ox, oy), wN = ptrWorld(e.clientX, e.clientY);
+        camX += wP.x - wN.x; camY += wP.y - wN.y; applyCam();
+    }
+}
+function onUp(e) {
+    const tap = (_tapId === e.pointerId && _tapMoved < 10);
+    _ptrs.delete(e.pointerId);
+    if (_ptrs.size < 2) _pinchDist = 0;
+    if (_ptrs.size === 0) _tapId = null;
+    if (booted && tap && !uiBlocked()) pickAt(e.clientX, e.clientY);
+}
+function onWheel(e) {
+    e.preventDefault();
+    const mid = ptrCanvas(e.clientX, e.clientY), wB = screenToWorld(mid);
+    camScale = Math.max(camMin, Math.min(camMax, camScale * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    setCameraScale(camScale);
+    const wA = screenToWorld(mid);
+    camX += wB.x - wA.x; camY += wB.y - wA.y; applyCam();
+}
+function pickAt(cx, cy) {
+    const m = ptrWorld(cx, cy);
+    const owned = S.plots.length, maxNow = ZONES.slice(0, S.zones).reduce((s, z) => s + z.plots, 0);
     let best = null, bd = 1e9;
-    const consider = (id, p) => { const d = Math.abs(m.x-p.x)/IW + Math.abs(m.y-p.y)/IH; if (d < bd) { bd = d; best = id; } };
+    const consider = (id, p) => { const d = Math.abs(m.x - p.x) / IW + Math.abs(m.y - p.y) / IH; if (d < bd) { bd = d; best = id; } };
     for (let i = 0; i < owned; i++) consider(i, plotPos(i));
     if (owned < maxNow) consider('+', plotPos(owned));
-    if (best !== null && bd < 1.25) { best === '+' ? buyPlot() : tapPlot(best); return; }
-    // табличка следующей зоны
+    if (best !== null && bd < 1.1) { best === '+' ? buyPlot() : tapPlot(best); return; }
     if (S.zones < ZONES.length) {
         const sp = zoneSignPos(S.zones);
-        if (Math.abs(m.x-sp.x) < 2.4 && m.y > sp.y - .4 && m.y < sp.y + 2) { buyZone(); return; }
+        if (Math.abs(m.x - sp.x) < 2.4 && m.y > sp.y - .4 && m.y < sp.y + 2) buyZone();
     }
 }
 
@@ -547,33 +588,14 @@ function gameInit() {
     // прокрутку страницы держит touch-action:none в CSS
     try { setInputPreventDefault(false); } catch(e) {}
     initCamera();
-    initPinch();
+    initCameraInput();
     initWorldDecor();
 }
 function gameUpdate() {
     if (!booted) return;
     simulate(timeDelta);
-    cameraControl();
-    fieldInput();
-    if (mouseWasReleased(0) && !panning && !S.mute && !musicOn) startMusic();
 }
-function gameUpdatePost() { setCameraPos(vec2(camX, camY)); setCameraScale(camScale); }
-
-// ---------- Зум щипком (two-finger pinch) ----------
-function initPinch() {
-    const cv = (typeof mainCanvas !== 'undefined') ? mainCanvas : document.querySelector('canvas');
-    if (!cv) return;
-    let pd = 0;
-    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    cv.addEventListener('touchstart', e => { if (e.touches.length === 2) { pd = dist(e.touches); panning = true; } }, { passive: true });
-    cv.addEventListener('touchmove', e => {
-        if (e.touches.length === 2 && pd) {
-            const d = dist(e.touches);
-            camScale *= d / pd; pd = d; panning = true; clampCam();
-        }
-    }, { passive: true });
-    cv.addEventListener('touchend', e => { if (e.touches.length < 2) pd = 0; }, { passive: true });
-}
+function gameUpdatePost() { applyCam(); }
 function gameRender() { if (booted) renderWorld(); }
 function gameRenderPost() { if (booted) renderWorldUI(); }
 
