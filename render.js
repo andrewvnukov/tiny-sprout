@@ -273,13 +273,22 @@ function buildWorld() {
             quad({ x: h0.x, y: h0.y - wallH * .88 }, { x: h1.x, y: h1.y - wallH * .88 },
                  { x: h1.x, y: h1.y - wallH * 1.02 }, { x: h0.x, y: h0.y - wallH * 1.02 }, '#5f2a1c');
         } else {
-            // дверь с филёнкой и ручкой
-            const d0 = faceB(.22), d1 = faceB(.42);
-            quad(d0, d1, { x: d1.x, y: d1.y - wallH * .6 }, { x: d0.x, y: d0.y - wallH * .6 }, '#9c7139');
-            x.strokeStyle = 'rgba(80,50,20,.6)'; x.lineWidth = 1.5 * z;
-            const dm = lerp(d0, d1, .5);
-            x.strokeRect(dm.x - 6 * z, dm.y - wallH * .5, 12 * z, wallH * .32);
-            x.fillStyle = '#ffd95e'; ell(d1.x - 3 * z, d1.y - wallH * .3, 1.8 * z, 1.8 * z);
+            // дверь: рама + дощатое полотно + ручка + ступенька
+            const f0 = faceB(.19), f1 = faceB(.45), d0 = faceB(.215), d1 = faceB(.425);
+            quad(f0, f1, { x: f1.x, y: f1.y - wallH * .64 }, { x: f0.x, y: f0.y - wallH * .64 }, '#8a6238');
+            quad(d0, d1, { x: d1.x, y: d1.y - wallH * .58 }, { x: d0.x, y: d0.y - wallH * .58 }, '#a97f48');
+            x.strokeStyle = 'rgba(80,50,20,.35)'; x.lineWidth = 1.2 * z;
+            for (const t of [1 / 3, 2 / 3]) {
+                const dp = lerp(d0, d1, t);
+                seg(dp.x, dp.y - 2 * z, dp.x, dp.y - wallH * .55);
+            }
+            const hnd = lerp(d0, d1, .82);
+            x.fillStyle = '#f6dc94'; ell(hnd.x, hnd.y - wallH * .3, 1.9 * z, 1.9 * z);
+            x.fillStyle = '#c98f36'; ell(hnd.x, hnd.y - wallH * .3, 1 * z, 1 * z);
+            // каменная ступенька перед дверью
+            const st = lerp(d0, d1, .5);
+            x.fillStyle = COL.stoneHi; ell(st.x, st.y + 2.5 * z, 8 * z, 3 * z);
+            x.fillStyle = COL.stone; ell(st.x + 3 * z, st.y + 3.2 * z, 4 * z, 1.8 * z);
             // окно: крест, ставни, ящик с цветами
             const w0 = faceB(.6), w1 = faceB(.82), wy = -wallH * .48;
             quad({ x: w0.x, y: w0.y + wy }, { x: w1.x, y: w1.y + wy },
@@ -768,25 +777,30 @@ function pushWorkers(push) {
         push(0, gy, () => drawWorker(e, cap), .3);
     }
 }
+// минималистичный «мипл»: единый силуэт, всё прижато друг к другу
 function drawWorker(e, id) {
-    const bob = Math.abs(Math.sin(time * 6 + e.ph)) * .06;
+    const bob = Math.abs(Math.sin(time * 6 + e.ph)) * .05;
     const p = e.p.add(vec2(0, bob));
     const shirt = id === 'harv' ? '#e29070' : '#7fa3c9';
-    drawEllipse(e.p.add(vec2(0, -.04)), vec2(.32, .1), SHADOW);
-    drawRect(p.add(vec2(-.08, .05)), vec2(.09, .16), C('#7a5f4a'));
-    drawRect(p.add(vec2(.08, .05)), vec2(.09, .16), C('#7a5f4a'));
-    drawEllipse(p.add(vec2(0, .3)), vec2(.28, .3), D(shirt, .85));
-    drawEllipse(p.add(vec2(-.02, .32)), vec2(.25, .28), C(shirt));
-    drawCircle(p.add(vec2(0, .78)), .3, C('#f6d7b2'));
-    drawCircle(p.add(vec2(-.09, .8)), .032, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.09, .8)), .032, C('#4a3b2e'));
-    drawCircle(p.add(vec2(-.16, .72)), .05, new Color(.95, .66, .6, .55));
-    drawCircle(p.add(vec2(.16, .72)), .05, new Color(.95, .66, .6, .55));
-    drawEllipse(p.add(vec2(0, .96)), vec2(.36, .11), C('#e2c878'));
-    drawEllipse(p.add(vec2(0, 1.02)), vec2(.2, .13), C('#eed88f'));
-    drawEllipse(p.add(vec2(0, .96)), vec2(.36, .04), C('#d0b264'));
-    if (id === 'harv') { drawEllipse(p.add(vec2(.32, .26)), vec2(.16, .11), C('#c9a578')); drawEllipse(p.add(vec2(.32, .31)), vec2(.13, .06), C('#8a6749')); }
-    else { drawEllipse(p.add(vec2(-.3, .26)), vec2(.13, .17), C('#d9c8a8')); drawEllipse(p.add(vec2(-.3, .35)), vec2(.09, .05), C('#b8a37c')); }
+    drawEllipse(e.p.add(vec2(0, -.02)), vec2(.3, .1), SHADOW);
+    // ручки — за корпусом, прижаты к бокам
+    drawEllipse(p.add(vec2(-.23, .28)), vec2(.08, .14), D(shirt, .85), .4);
+    drawEllipse(p.add(vec2(.23, .28)), vec2(.08, .14), D(shirt, .85), -.4);
+    // инструмент — прижат к ручке
+    if (id === 'harv') { drawEllipse(p.add(vec2(.3, .22)), vec2(.14, .1), C('#c9a578')); drawEllipse(p.add(vec2(.3, .26)), vec2(.11, .05), C('#8a6749')); }
+    else { drawEllipse(p.add(vec2(-.3, .22)), vec2(.11, .15), C('#d9c8a8')); drawEllipse(p.add(vec2(-.3, .3)), vec2(.08, .04), C('#b8a37c')); }
+    // корпус-капелька
+    drawEllipse(p.add(vec2(0, .3)), vec2(.26, .32), C(shirt));
+    // голова — глубоко сидит на корпусе
+    drawCircle(p.add(vec2(0, .62)), .25, C('#f6d7b2'));
+    // шляпа
+    drawEllipse(p.add(vec2(0, .76)), vec2(.33, .1), C('#e2c878'));
+    drawEllipse(p.add(vec2(0, .82)), vec2(.18, .11), C('#eed88f'));
+    // лицо
+    drawCircle(p.add(vec2(-.08, .62)), .032, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.08, .62)), .032, C('#4a3b2e'));
+    drawCircle(p.add(vec2(-.15, .55)), .045, new Color(.95, .66, .6, .55));
+    drawCircle(p.add(vec2(.15, .55)), .045, new Color(.95, .66, .6, .55));
 }
 function drawTractor() {
     if (!S.workers.tract || tractorT < 0 || tractorT > 3) return;

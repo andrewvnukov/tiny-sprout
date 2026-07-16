@@ -465,6 +465,8 @@ const HOUSE_G = { gx: -4, gy: 4 };
 const POND_G  = { gx: 6, gy: 6 };
 const PATH_CELLS = [];
 for (let gx = 0; gx <= 3; gx++) { PATH_CELLS.push([gx, 2]); PATH_CELLS.push([gx, 5]); }
+PATH_CELLS.push([-2, 0], [-2, 1], [-1, 1], [-1, 2]);   // от ворот амбара к полю
+PATH_CELLS.push([-2, 5], [-1, 5]);               // от двери дома к полю
 const FIELD_CX = -2.84, FIELD_CY = -3.6;          // центр поля (world)
 
 // ---------- Камера: пан + зум (прямые pointer-события, якорные) ----------

@@ -87,6 +87,7 @@ function initUI() {
     $('albumFab').onclick  = () => { openSheet('albumSheet'); renderAlbum(); };
     $('prestigeFab').onclick = showPrestige;
     $('cropBtn').onclick   = () => { openSheet('cropSheet'); renderCropPick(); };
+    $('sellBtn').onclick   = sellAll;
     $('boostBtn').onclick  = adBoost;
     $('growBtn').onclick   = adGrowAll;
     $('muteBtn').onclick   = () => { toggleMute(); renderHud(); };
@@ -168,6 +169,13 @@ function renderHud() {
     const tot = storeTotal();
     $('barnBadge').textContent = tot;
     $('barnBadge').style.display = tot ? '' : 'none';
+    // быстрая продажа: видна только когда есть что продать
+    $('sellBtn').style.display = tot ? '' : 'none';
+    if (tot) {
+        let sum = 0;
+        for (const id in S.store) sum += priceOf(id) * S.store[id];
+        $('sellBtn').innerHTML = icc('sell') + ' +' + fmt(sum);
+    }
     const ordReady = S.orders.filter(o => (S.store[CROPS[o.crop].id]||0) >= o.qty).length
         + S.quests.filter(q => !q.claimed && qProg(q) >= q.n).length;
     $('orderBadge').textContent = ordReady;
