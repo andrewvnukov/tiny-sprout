@@ -30,6 +30,12 @@ const TILE_GX0 = -10, TILE_GX1 = 10, TILE_GY0 = -8, TILE_GY1 = 14;
 const BED_DEP = .34;                              // высота короба грядки (world)
 const BLD = { half: 2, foot: .3, wall: 2.0, roof: 1.8 }; // постройка: 2×2 клетки, размеры в world
 const PONDC = () => isoWorld(POND_G.gx + .5, POND_G.gy + .5);
+// отдельный загон под каждый вид (границы в grid-координатах)
+const PADDOCK = {
+    hen:   { x0: -3.4, x1: -1.7, y0: 8.2, y1: 9.9 },
+    cow:   { x0: -0.2, x1: 2.1,  y0: 9.2, y1: 11.0 },
+    sheep: { x0: 3.0,  x1: 5.3,  y0: 9.2, y1: 11.0 },
+};
 // точка дыма над трубой дома (world)
 function chimneyPos() {
     const cc = isoWorld(HOUSE_G.gx + .5, HOUSE_G.gy + .5);
@@ -48,26 +54,37 @@ function buildOcc() {
     for (const [gx, gy] of PATH_CELLS) OCC.add(cellKey(gx, gy));
     for (const b of [BARN_G, HOUSE_G, POND_G])                  // 2×2 клетки + кольцо
         for (let dx = -1; dx <= 2; dx++) for (let dy = -1; dy <= 2; dy++) OCC.add(cellKey(b.gx + dx, b.gy + dy));
-    for (let gx = 0; gx <= 3; gx++) for (let gy = 9; gy <= 10; gy++) OCC.add(cellKey(gx, gy)); // загон
+    for (const k in PADDOCK) { const p = PADDOCK[k];            // загоны
+        for (let gx = Math.floor(p.x0); gx <= Math.ceil(p.x1); gx++)
+            for (let gy = Math.floor(p.y0); gy <= Math.ceil(p.y1); gy++) OCC.add(cellKey(gx, gy));
+    }
 }
 const cellFree = (gx, gy) => !OCC.has(cellKey(gx, gy));
+// активная зона фермы (сюда деревья не ставим)
+const inCore = (gx, gy) => gx > -6.5 && gx < 8 && gy > -2.5 && gy < 12;
 function initWorldDecor() {
     buildOcc();
     const R = (a, b) => a + Math.random() * (b - a);
+    // клетки под мелкий декор — по всей карте, кроме занятых
     const cells = [];
-    for (let gx = -5; gx <= 8; gx++) for (let gy = -4; gy <= 8; gy++) if (cellFree(gx, gy)) cells.push([gx, gy]);
+    for (let gx = -11; gx <= 11; gx++) for (let gy = -8; gy <= 12; gy++) if (cellFree(gx, gy)) cells.push([gx, gy]);
     for (let i = cells.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [cells[i], cells[j]] = [cells[j], cells[i]]; }
     let idx = 0;
     const mk = (n, f) => { const o = []; for (let k = 0; k < n && idx < cells.length; k++) o.push(f(cells[idx++])); return o; };
     decor = {
-        clouds: Array.from({ length: 5 }, () => ({ x: R(-16, 16), y: R(3, 8), s: R(.9, 1.7), v: R(.05, .14) })),
-        flowers: mk(14, c => ({ gx: c[0], gy: c[1], s: R(.8, 1.2), h: ['#eda3b4', '#f2d98a', '#f7f2e4', '#c3a8dd'][Math.floor(R(0, 4))] })),
-        grass:   mk(20, c => ({ gx: c[0], gy: c[1], s: R(.8, 1.3) })),
-        stones:  mk(6,  c => ({ gx: c[0], gy: c[1], s: R(.7, 1.2) })),
+        clouds: Array.from({ length: 6 }, () => ({ x: R(-18, 18), y: R(3, 9), s: R(.9, 1.7), v: R(.05, .14) })),
+        flowers: mk(34, c => ({ gx: c[0], gy: c[1], s: R(.8, 1.25), h: ['#eda3b4', '#f2d98a', '#f7f2e4', '#c3a8dd', '#f0a860'][Math.floor(R(0, 5))] })),
+        grass:   mk(46, c => ({ gx: c[0], gy: c[1], s: R(.8, 1.35) })),
+        stones:  mk(14, c => ({ gx: c[0], gy: c[1], s: R(.7, 1.3) })),
         trees: [],
-        btf: Array.from({ length: 4 }, () => ({ x: R(-8, 2), y: R(-5, 0), p: R(0, 9) })),
+        btf: Array.from({ length: 5 }, () => ({ x: R(-8, 4), y: R(-5, 2), p: R(0, 9) })),
     };
-    for (let gx = -3; gx <= 6; gx++) if (cellFree(gx, -3)) decor.trees.push({ gx, gy: -3, s: R(.85, 1.15) }); // ряд деревьев сзади
+    // деревья вразброс по всей опушке (дробные координаты — не в ряд)
+    for (let n = 0; n < 46; n++) {
+        const gx = R(-11, 12), gy = R(-9, 13);
+        if (inCore(gx, gy)) continue;
+        decor.trees.push({ gx, gy, s: R(.78, 1.28) });
+    }
 }
 
 // ============================================================
@@ -75,7 +92,8 @@ function initWorldDecor() {
 // ============================================================
 let worldCanvas = null, worldSig = '';
 function worldSigNow() {
-    return S.zones + ':' + S.plots.length + ':' + ((S.animals.hen + S.animals.cow + S.animals.sheep) > 0 ? 1 : 0);
+    return S.zones + ':' + S.plots.length + ':' +
+        (S.animals.hen > 0 ? 'h' : '') + (S.animals.cow > 0 ? 'c' : '') + (S.animals.sheep > 0 ? 's' : '');
 }
 function buildWorld() {
     worldSig = worldSigNow();
@@ -396,21 +414,76 @@ function buildWorld() {
     for (const g of decor.grass) put(g.gx + g.gy, () => tuft(g));
     for (const s of decor.stones) put(s.gx + s.gy, () => stone(s));
 
-    // стог сена в загоне (если есть животные)
-    if ((S.animals.hen + S.animals.cow + S.animals.sheep) > 0) {
-        put(9.4, () => {
-            const s = G(.2, 9);
-            softShadow(s.x, s.y + 3 * z, 26 * z, 9 * z, .18);
-            x.fillStyle = '#e2c878'; ell(s.x, s.y - 8 * z, 24 * z, 13 * z);
-            x.fillStyle = '#eed88f'; ell(s.x - 4 * z, s.y - 12 * z, 17 * z, 9 * z);
-            x.strokeStyle = '#d0b264'; x.lineWidth = 1.2 * z;
-            for (let i = 0; i < 6; i++) {
-                const a = rnd(i * 3) * 6.28;
-                seg(s.x + Math.cos(a) * 14 * z, s.y - 8 * z + Math.sin(a) * 7 * z,
-                    s.x + Math.cos(a) * 20 * z, s.y - 8 * z + Math.sin(a) * 10 * z);
-            }
-        });
+    // ---------- загоны: у каждого вида свой стиль ----------
+    function penGround(pd, fill) {
+        const A = G(pd.x0, pd.y0), B = G(pd.x1, pd.y0), Cc = G(pd.x1, pd.y1), Dd = G(pd.x0, pd.y1);
+        x.fillStyle = fill;
+        x.beginPath(); x.moveTo(A.x, A.y); x.lineTo(B.x, B.y); x.lineTo(Cc.x, Cc.y); x.lineTo(Dd.x, Dd.y); x.closePath(); x.fill();
     }
+    function fenceRun(a, b, o, n) {
+        x.strokeStyle = o.rail; x.lineWidth = 2.2 * z;
+        for (const rh of o.rails) seg(a.x, a.y - o.h * rh, b.x, b.y - o.h * rh);
+        for (let i = 0; i <= n; i++) { const t = i / n, px = a.x + (b.x - a.x) * t, py = a.y + (b.y - a.y) * t;
+            x.fillStyle = o.post; x.fillRect(px - o.pw, py - o.h, o.pw * 2, o.h);
+            if (o.cap) { x.fillStyle = o.cap; ell(px, py - o.h, o.pw * 1.3, o.pw); } }
+    }
+    function penFences(pd, o) {
+        const A = G(pd.x0, pd.y0), B = G(pd.x1, pd.y0), Cc = G(pd.x1, pd.y1), Dd = G(pd.x0, pd.y1);
+        const nx = Math.max(2, Math.round((pd.x1 - pd.x0) * 2.2)), ny = Math.max(2, Math.round((pd.y1 - pd.y0) * 2.2));
+        fenceRun(A, B, o, nx); fenceRun(A, Dd, o, ny);          // задние рёбра
+        fenceRun(Dd, Cc, o, nx); fenceRun(B, Cc, o, ny);        // передние рёбра
+    }
+    function coop(pd) {                                          // курятник
+        const c = G(pd.x0 + .55, pd.y0 + .62), cw = TW * .52, ch = TH * .52, wallH = 23 * z, roofH = 16 * z;
+        softShadow(c.x, c.y + ch * .5, cw * 1.3, ch, .2);
+        const B0 = { x: c.x, y: c.y + ch }, L0 = { x: c.x - cw, y: c.y }, R0 = { x: c.x + cw, y: c.y };
+        quad(L0, B0, { x: B0.x, y: B0.y - wallH }, { x: L0.x, y: L0.y - wallH }, '#d9b98a');
+        quad(B0, R0, { x: R0.x, y: R0.y - wallH }, { x: B0.x, y: B0.y - wallH }, '#ecd3a6');
+        x.strokeStyle = 'rgba(120,90,50,.3)'; x.lineWidth = 1 * z;
+        for (let i = 1; i < 3; i++) { const p = lerp(B0, R0, i / 3); seg(p.x, p.y, p.x, p.y - wallH); }
+        const eB = lerp(B0, R0, .5);
+        x.fillStyle = '#b8935c'; x.beginPath(); x.moveTo(eB.x - 3.5 * z, eB.y); x.lineTo(eB.x + 3.5 * z, eB.y); x.lineTo(eB.x + 6 * z, eB.y + 8 * z); x.lineTo(eB.x - 1 * z, eB.y + 8 * z); x.closePath(); x.fill();
+        x.fillStyle = '#5a4632'; ell(eB.x, eB.y - wallH * .36, 4.4 * z, 5.4 * z);
+        x.fillStyle = '#3f3020'; ell(eB.x, eB.y - wallH * .3, 2.8 * z, 3.4 * z);
+        const apex = { x: c.x, y: c.y - wallH - roofH }, eL = { x: L0.x, y: L0.y - wallH }, eR = { x: R0.x, y: R0.y - wallH }, eBt = { x: B0.x, y: B0.y - wallH };
+        quad(eL, eBt, apex, eL, '#a84a33'); quad(eBt, eR, apex, eBt, '#c9553c');
+        x.strokeStyle = 'rgba(255,255,255,.25)'; x.lineWidth = 2 * z; seg(eBt.x, eBt.y, apex.x, apex.y);
+    }
+    function trough(pd, water) {                                 // корыто/кормушка
+        const t = G(pd.x0 + .55, pd.y0 + .55), tw = TW * .5, th = TH * .5, dep = 7 * z;
+        quad({ x: t.x - tw, y: t.y }, { x: t.x, y: t.y + th }, { x: t.x, y: t.y + th - dep }, { x: t.x - tw, y: t.y - dep }, '#9c7139');
+        quad({ x: t.x, y: t.y + th }, { x: t.x + tw, y: t.y }, { x: t.x + tw, y: t.y - dep }, { x: t.x, y: t.y + th - dep }, '#b8935c');
+        rhombus(t.x, t.y - dep * .4, tw * .82, th * .82, water ? '#7fd0e0' : '#eed88f');
+        if (water) rhombus(t.x, t.y - dep * .4, tw * .5, th * .5, '#a6e4ee');
+    }
+    function hayBale(pd) {                                       // тюк сена
+        const h = G(pd.x1 - .5, pd.y0 + .5);
+        softShadow(h.x, h.y + 3 * z, 15 * z, 6 * z, .16);
+        x.fillStyle = '#e2c878'; x.fillRect(h.x - 11 * z, h.y - 15 * z, 22 * z, 15 * z);
+        x.strokeStyle = '#cdae63'; x.lineWidth = 1.2 * z;
+        for (let i = 1; i < 4; i++) seg(h.x - 11 * z, h.y - 15 * z + i * 3.6 * z, h.x + 11 * z, h.y - 15 * z + i * 3.6 * z);
+        x.strokeStyle = '#b8935c'; x.lineWidth = 2 * z; x.strokeRect(h.x - 4 * z, h.y - 15 * z, 3 * z, 15 * z);
+    }
+    function penBush(pd) {                                       // кустик у овец
+        const b = G(pd.x1 - .5, pd.y0 + .5);
+        softShadow(b.x, b.y + 2 * z, 12 * z, 5 * z, .16);
+        x.fillStyle = '#6f9c5c'; ell(b.x, b.y - 6 * z, 11 * z, 9 * z);
+        x.fillStyle = '#7fac68'; ell(b.x - 4 * z, b.y - 9 * z, 6 * z, 5 * z);
+        x.fillStyle = '#e88ba4'; ell(b.x + 3 * z, b.y - 8 * z, 2 * z, 2 * z);
+        x.fillStyle = '#f2d98a'; ell(b.x - 2 * z, b.y - 4 * z, 1.8 * z, 1.8 * z);
+    }
+    if (S.animals.hen > 0) put(PADDOCK.hen.x1 + PADDOCK.hen.y1, () => {
+        penGround(PADDOCK.hen, '#cdbd93'); coop(PADDOCK.hen);
+        penFences(PADDOCK.hen, { h: 15 * z, rails: [.72], rail: '#efe4cb', post: '#efe4cb', pw: 1.5 * z, cap: '#e7d9b8' });
+    });
+    if (S.animals.cow > 0) put(PADDOCK.cow.x1 + PADDOCK.cow.y1, () => {
+        penGround(PADDOCK.cow, '#a7c56e'); trough(PADDOCK.cow, true); hayBale(PADDOCK.cow);
+        penFences(PADDOCK.cow, { h: 20 * z, rails: [.4, .82], rail: '#a97f48', post: '#8a6238', pw: 2.2 * z });
+    });
+    if (S.animals.sheep > 0) put(PADDOCK.sheep.x1 + PADDOCK.sheep.y1, () => {
+        penGround(PADDOCK.sheep, '#a7c56e'); trough(PADDOCK.sheep, false); penBush(PADDOCK.sheep);
+        penFences(PADDOCK.sheep, { h: 17 * z, rails: [.6], rail: '#c9b393', post: '#b8935c', pw: 1.9 * z, cap: '#d9c8a8' });
+    });
 
     items.sort((a, b) => a.d - b.d);
     for (const it of items) it.fn();
@@ -512,7 +585,7 @@ function drawCrop(pos, p) {
     const c = CROPS[p.c], gt = cropGrow(c), k = Math.min(1, p.t / gt), ready = k >= 1;
     const bob = ready ? Math.sin(time * 3 + pos.x) * .05 : 0;
     const o = pos.add(vec2(0, BED_DEP + bob));      // растение на ВЕРХУ короба
-    if (k < .35) drawSprout(o, k);
+    if (k < .35) { drawMound(o, .42); drawSprout(o, k); }
     else drawCropArt(o, p.c, .45 + .55 * k);
     if (p.g && k > .3) {
         const tw = .5 + Math.sin(time * 5 + pos.x * 2) * .5;
@@ -559,101 +632,134 @@ function blob(o, dx, dy, rx, ry, base) {
     drawEllipse(o.add(vec2(dx - rx * .08, dy + ry * .12)), vec2(rx * .88, ry * .85), C(base));
     drawEllipse(o.add(vec2(dx - rx * .3, dy + ry * .4)), vec2(rx * .24, ry * .16), new Color(1, 1, 1, .35));
 }
+// холмик почвы позади растения
+function drawMound(o, w) {
+    drawEllipse(o.add(vec2(0, .07)), vec2(w, w * .34), C('#5f4126'));
+    drawEllipse(o.add(vec2(0, .11)), vec2(w * .82, w * .26), C('#77522f'));
+}
+// передняя кромка почвы — растение наполовину «сидит» в земле
+function drawSoilLip(o, w) {
+    drawEllipse(o.add(vec2(0, .02)), vec2(w, .12), C('#6b4a2a'));
+    drawEllipse(o.add(vec2(-.05 * w, .05)), vec2(w * .82, .09), C('#835a34'));
+    drawEllipse(o.add(vec2(.3 * w, .0)), vec2(.05, .03), C('#946640'));
+    drawEllipse(o.add(vec2(-.32 * w, .04)), vec2(.045, .028), C('#946640'));
+}
 function drawCropArt(o, ci, s) {
     const c = CROPS[ci], top = C(c.top), body = C(c.hue);
+    drawMound(o, .5 * s + .08);
     switch (c.id) {
     case 'wheat':
-        for (let k = -2; k <= 2; k++) { const x = k * .28, hgt = (.72 + Math.abs(k) * .06) * s;
-            drawLine(o.add(vec2(x, 0)), o.add(vec2(x + .06, hgt)), .05, C('#cdb162'));
-            drawEllipse(o.add(vec2(x + .06, hgt)), vec2(.11 * s, .22 * s), D(c.hue, .85));
-            drawEllipse(o.add(vec2(x + .04, hgt + .03)), vec2(.09 * s, .19 * s), body); }
+        for (let k = -2; k <= 2; k++) { const xx = k * .24, hgt = (.72 + Math.abs(k) * .05) * s;
+            drawLine(o.add(vec2(xx, .04)), o.add(vec2(xx + .05, hgt)), .05, C('#cdb162'));
+            drawEllipse(o.add(vec2(xx + .05, hgt)), vec2(.1 * s, .2 * s), D(c.hue, .85));
+            drawEllipse(o.add(vec2(xx + .03, hgt + .03)), vec2(.08 * s, .17 * s), body); }
         break;
-    case 'carrot':
-        for (let k = -1; k <= 1; k++) { const b = o.add(vec2(k * .62, .16));
-            drawPoly([vec2(-.16, 0), vec2(.16, 0), vec2(0, -.46 * s)], D(c.hue, .85), 0, undefined, b);
-            drawPoly([vec2(-.12, -.02), vec2(.1, -.02), vec2(-.02, -.4 * s)], body, 0, undefined, b);
-            drawLine(b, b.add(vec2(-.09, .4 * s + .1)), .06, top);
-            drawLine(b, b.add(vec2(.1, .36 * s + .1)), .06, D(c.top, .88)); }
+    case 'carrot':                                   // округлые «плечи» из земли + пышные фронды
+        for (let k = -1; k <= 1; k++) { const b = o.add(vec2(k * .34, 0));
+            drawLine(b.add(vec2(0, .06)), b.add(vec2(-.13, .52 * s)), .05, top);
+            drawLine(b.add(vec2(0, .06)), b.add(vec2(.12, .47 * s)), .05, D(c.top, .9));
+            drawLine(b.add(vec2(0, .06)), b.add(vec2(-.01, .56 * s)), .05, top);
+            drawEllipse(b.add(vec2(0, .09)), vec2(.16 * s, .15 * s), D(c.hue, .8));
+            drawEllipse(b.add(vec2(-.02, .12)), vec2(.12 * s, .11 * s), body);
+            drawEllipse(b.add(vec2(-.05, .15)), vec2(.045 * s, .03 * s), new Color(1, 1, 1, .45)); }
         break;
-    case 'potato':
-        drawEllipse(o.add(vec2(0, .32 * s)), vec2(.7 * s, .4 * s), C('#84a95e'));
-        drawEllipse(o.add(vec2(-.1, .36 * s)), vec2(.5 * s, .32 * s), C('#94b96c'));
-        blob(o, -.4, .08, .24 * s, .17 * s, c.hue); blob(o, .38, .06, .26 * s, .18 * s, c.hue);
+    case 'potato':                                   // куст сверху, клубни выглядывают из земли
+        drawEllipse(o.add(vec2(-.02, .36 * s)), vec2(.48 * s, .34 * s), C('#7fae5c'));
+        drawEllipse(o.add(vec2(-.16, .42 * s)), vec2(.24 * s, .2 * s), C('#8fc167'));
+        drawEllipse(o.add(vec2(.16, .46 * s)), vec2(.22 * s, .18 * s), C('#9ccb74'));
+        drawEllipse(o.add(vec2(-.3, .1)), vec2(.16 * s, .12 * s), D(c.hue, .85));
+        drawEllipse(o.add(vec2(.28, .08)), vec2(.17 * s, .12 * s), C(c.hue));
+        drawEllipse(o.add(vec2(-.33, .12)), vec2(.04 * s, .03 * s), new Color(1, 1, 1, .3));
         break;
-    case 'cabbage':
-        blob(o, 0, .32 * s, .5 * s, .46 * s, c.hue);
-        drawEllipse(o.add(vec2(-.34 * s, .3 * s)), vec2(.2 * s, .36 * s), C(c.top));
-        drawEllipse(o.add(vec2(.34 * s, .3 * s)), vec2(.2 * s, .36 * s), C(c.top));
-        drawEllipse(o.add(vec2(0, .5 * s)), vec2(.26 * s, .2 * s), new Color(1, 1, 1, .25));
+    case 'cabbage':                                  // круглый слоёный кочан, низ в земле
+        drawEllipse(o.add(vec2(-.34 * s, .24 * s)), vec2(.2 * s, .32 * s), C(c.top));
+        drawEllipse(o.add(vec2(.34 * s, .24 * s)), vec2(.2 * s, .32 * s), C(c.top));
+        blob(o, 0, .28 * s, .44 * s, .38 * s, c.hue);
+        drawEllipse(o.add(vec2(.02, .34 * s)), vec2(.28 * s, .24 * s), D(c.top, 1.05));
+        drawEllipse(o.add(vec2(-.04, .44 * s)), vec2(.18 * s, .14 * s), new Color(1, 1, 1, .22));
         break;
-    case 'tomato':
-        drawEllipse(o.add(vec2(0, .36 * s)), vec2(.56 * s, .5 * s), C('#84a95e'));
-        blob(o, -.26, .3 * s, .19 * s, .18 * s, c.hue); blob(o, .26, .42 * s, .19 * s, .18 * s, c.hue); blob(o, 0, .16, .18 * s, .17 * s, c.hue);
+    case 'tomato':                                   // кустик с помидорами
+        drawEllipse(o.add(vec2(0, .42 * s)), vec2(.48 * s, .48 * s), C('#6faf5a'));
+        drawEllipse(o.add(vec2(-.2, .58 * s)), vec2(.2 * s, .2 * s), C('#7fbf68'));
+        blob(o, -.24, .3 * s, .17 * s, .16 * s, c.hue); blob(o, .26, .46 * s, .17 * s, .16 * s, c.hue); blob(o, .05, .18 * s, .16 * s, .15 * s, c.hue);
         break;
-    case 'cuke':
-        drawEllipse(o.add(vec2(0, .32 * s)), vec2(.58 * s, .4 * s), C('#84a95e'));
-        blob(o, -.3, .14, .32 * s, .13 * s, c.hue); blob(o, .32, .2, .3 * s, .12 * s, c.hue);
+    case 'cuke':                                     // плети по земле, огурцы наполовину в почве
+        drawEllipse(o.add(vec2(0, .36 * s)), vec2(.5 * s, .32 * s), C('#6faf5a'));
+        blob(o, -.3, .1, .3 * s, .12 * s, c.hue); blob(o, .32, .16, .28 * s, .11 * s, c.hue);
         break;
-    case 'corn':
-        drawLine(o, o.add(vec2(0, .95 * s)), .08, C('#6da057'));
-        drawEllipse(o.add(vec2(-.22, .45 * s)), vec2(.32 * s, .11 * s), C(c.top));
-        drawEllipse(o.add(vec2(.22, .62 * s)), vec2(.32 * s, .11 * s), D(c.top, .9));
-        drawEllipse(o.add(vec2(.13, .36 * s)), vec2(.18 * s, .34 * s), D(c.hue, .85));
-        drawEllipse(o.add(vec2(.11, .38 * s)), vec2(.15 * s, .3 * s), body);
-        drawEllipse(o.add(vec2(.06, .46 * s)), vec2(.05 * s, .12 * s), new Color(1, 1, 1, .35));
+    case 'corn':                                     // высокий стебель с початком
+        drawLine(o.add(vec2(0, .04)), o.add(vec2(0, .95 * s)), .08, C('#6da057'));
+        drawEllipse(o.add(vec2(-.2, .5 * s)), vec2(.3 * s, .1 * s), C(c.top), .2);
+        drawEllipse(o.add(vec2(.2, .66 * s)), vec2(.3 * s, .1 * s), D(c.top, .9), -.2);
+        drawEllipse(o.add(vec2(.12, .42 * s)), vec2(.17 * s, .32 * s), D(c.hue, .85));
+        drawEllipse(o.add(vec2(.1, .44 * s)), vec2(.14 * s, .28 * s), body);
+        drawEllipse(o.add(vec2(.05, .52 * s)), vec2(.05 * s, .11 * s), new Color(1, 1, 1, .35));
         break;
-    case 'berry':
-        drawEllipse(o.add(vec2(0, .26 * s)), vec2(.62 * s, .34 * s), C('#84a95e'));
-        for (const [x, y] of [[-.36, .12], [.32, .16], [0, .36 * s]]) { const b = o.add(vec2(x, y));
-            drawPoly([vec2(-.13, .1), vec2(.13, .1), vec2(0, -.18)], D(c.hue, .85), 0, undefined, b);
-            drawPoly([vec2(-.1, .09), vec2(.1, .09), vec2(0, -.14)], body, 0, undefined, b);
-            drawCircle(b.add(vec2(-.03, .02)), .025, new Color(1, 1, 1, .5)); }
+    case 'berry':                                    // низкий кустик с клубникой у земли
+        drawEllipse(o.add(vec2(0, .32 * s)), vec2(.54 * s, .3 * s), C('#5fae52'));
+        drawEllipse(o.add(vec2(-.24, .42 * s)), vec2(.17 * s, .15 * s), C('#6faf5a'));
+        drawEllipse(o.add(vec2(.24, .42 * s)), vec2(.17 * s, .15 * s), C('#6faf5a'));
+        for (const [xx, yy] of [[-.28, .14], [.28, .16], [.02, .26]]) { const b = o.add(vec2(xx, yy));
+            drawEllipse(b, vec2(.14 * s, .16 * s), D(c.hue, .85));
+            drawEllipse(b.add(vec2(-.02, .02)), vec2(.11 * s, .13 * s), body);
+            drawCircle(b.add(vec2(-.04, .03)), .02, new Color(1, 1, .9, .7));
+            drawCircle(b.add(vec2(.04, .07)), .02, new Color(1, 1, .9, .7));
+            drawPoly([vec2(-.08, 0), vec2(.08, 0), vec2(0, -.11)], C(c.top), 0, undefined, b.add(vec2(0, .15 * s))); }
         break;
-    case 'pumpkin':
-        blob(o, 0, .3 * s, .58 * s, .42 * s, c.hue);
-        drawEllipse(o.add(vec2(0, .3 * s)), vec2(.26 * s, .4 * s), C('#f0a45a'));
-        drawEllipse(o.add(vec2(-.3 * s, .3 * s)), vec2(.14 * s, .36 * s), D(c.hue, .9));
-        drawRect(o.add(vec2(0, .74 * s)), vec2(.1, .16 * s), C('#7d915c'));
+    case 'pumpkin':                                  // большая тыква, низ в земле
+        blob(o, 0, .26 * s, .56 * s, .4 * s, c.hue);
+        drawEllipse(o.add(vec2(0, .26 * s)), vec2(.26 * s, .38 * s), C('#f0a45a'));
+        drawEllipse(o.add(vec2(-.3 * s, .26 * s)), vec2(.13 * s, .34 * s), D(c.hue, .9));
+        drawEllipse(o.add(vec2(.3 * s, .26 * s)), vec2(.12 * s, .32 * s), D(c.hue, .9));
+        drawRect(o.add(vec2(0, .62 * s)), vec2(.09, .16 * s), C('#7d915c'));
         break;
-    case 'melon':
-        blob(o, 0, .34 * s, .5 * s, .46 * s, c.hue);
-        for (let k = -1; k <= 1; k++) drawEllipse(o.add(vec2(k * .26 * s, .32 * s)), vec2(.08 * s, .42 * s), C('#2f5c3c'));
+    case 'melon':                                    // полосатый арбуз наполовину в почве
+        blob(o, 0, .26 * s, .5 * s, .4 * s, c.hue);
+        for (let k = -1; k <= 1; k++) drawEllipse(o.add(vec2(k * .24 * s, .26 * s)), vec2(.07 * s, .36 * s), C('#2f5c3c'));
+        drawEllipse(o.add(vec2(-.16 * s, .36 * s)), vec2(.1 * s, .13 * s), new Color(1, 1, 1, .18));
         break;
-    case 'grape':
-        drawRect(o.add(vec2(0, .44 * s)), vec2(.9 * s, .07), C('#b08a5e'));
-        for (const [x, y] of [[0, .1], [-.16, .26], [.16, .26], [0, .42]]) {
-            drawCircle(o.add(vec2(x * s, y * s)), .16 * s, D(c.hue, .82));
-            drawCircle(o.add(vec2((x - .02) * s, (y + .02) * s)), .14 * s, C(c.hue)); }
-        drawEllipse(o.add(vec2(.22 * s, .56 * s)), vec2(.17 * s, .1 * s), C(c.top));
+    case 'grape':                                    // лоза на подпорке
+        drawLine(o.add(vec2(0, .1)), o.add(vec2(0, .72 * s)), .05, C('#8a6749'));
+        drawEllipse(o.add(vec2(0, .74 * s)), vec2(.22 * s, .12 * s), C(c.top));
+        for (const [xx, yy] of [[0, .16], [-.14, .3], [.14, .3], [0, .44]]) {
+            drawCircle(o.add(vec2(xx * s, yy * s)), .15 * s, D(c.hue, .82));
+            drawCircle(o.add(vec2((xx - .02) * s, (yy + .02) * s)), .13 * s, C(c.hue)); }
         break;
-    case 'pine':
-        drawEllipse(o.add(vec2(0, .36 * s)), vec2(.32 * s, .44 * s), D(c.hue, .82));
-        drawEllipse(o.add(vec2(-.02, .38 * s)), vec2(.28 * s, .4 * s), body);
-        drawLine(o.add(vec2(-.2 * s, .22 * s)), o.add(vec2(.2 * s, .52 * s)), .035, C('#c89a2e'));
-        drawLine(o.add(vec2(-.2 * s, .46 * s)), o.add(vec2(.2 * s, .24 * s)), .035, C('#c89a2e'));
-        for (let k = -1; k <= 1; k++) drawPoly([vec2(-.08, 0), vec2(.08, 0), vec2(k * .13, .36 * s)], C(c.top), 0, undefined, o.add(vec2(k * .1, .74 * s)));
+    case 'pine':                                     // ананас с хохолком, низ в земле
+        drawEllipse(o.add(vec2(0, .3 * s)), vec2(.3 * s, .4 * s), D(c.hue, .82));
+        drawEllipse(o.add(vec2(-.02, .32 * s)), vec2(.26 * s, .36 * s), body);
+        drawLine(o.add(vec2(-.18 * s, .2 * s)), o.add(vec2(.18 * s, .48 * s)), .03, C('#c89a2e'));
+        drawLine(o.add(vec2(-.18 * s, .44 * s)), o.add(vec2(.18 * s, .22 * s)), .03, C('#c89a2e'));
+        for (let k = -1; k <= 1; k++) drawPoly([vec2(-.07, 0), vec2(.07, 0), vec2(k * .12, .34 * s)], C(c.top), 0, undefined, o.add(vec2(k * .1, .66 * s)));
         break;
     }
+    drawSoilLip(o, .48 * s + .06);
 }
 
 // ---------- Животные (детализированные чиби) ----------
 const animEnts = [];
+function spawnIn(pd) {
+    return { gx: pd.x0 + .2 + Math.random() * (pd.x1 - pd.x0 - .4),
+             gy: pd.y0 + .2 + Math.random() * (pd.y1 - pd.y0 - .4) };
+}
 function syncAnimals() {
     const want = [];
     for (const a of ANIMALS) for (let k = 0; k < S.animals[a.id]; k++) want.push(a.id);
     while (animEnts.length > want.length) animEnts.pop();
     while (animEnts.length < want.length) {
-        const gx = .2 + Math.random() * 2.6, gy = 9 + Math.random();
-        animEnts.push({ id: want[animEnts.length], gx, gy, dir: Math.random() < .5 ? 1 : -1, v: .3 + Math.random() * .3, ph: Math.random() * 9 });
+        const id = want[animEnts.length], sp = spawnIn(PADDOCK[id]);
+        animEnts.push({ id, gx: sp.gx, gy: sp.gy, dir: Math.random() < .5 ? 1 : -1, v: .25 + Math.random() * .3, ph: Math.random() * 9 });
     }
-    for (let i = 0; i < want.length; i++) animEnts[i].id = want[i];
+    for (let i = 0; i < want.length; i++)
+        if (animEnts[i].id !== want[i]) { animEnts[i].id = want[i]; const sp = spawnIn(PADDOCK[want[i]]); animEnts[i].gx = sp.gx; animEnts[i].gy = sp.gy; }
 }
 function pushAnimals(push) {
     syncAnimals();
-    if (animEnts.length) pushFence(push);
     for (const a of animEnts) {
-        a.gx += a.dir * a.v * timeDelta * .5;
-        if (a.gx > 3.1) a.dir = -1; if (a.gx < -.1) a.dir = 1;
+        const pd = PADDOCK[a.id];
+        a.gx += a.dir * a.v * timeDelta * .4;
+        if (a.gx > pd.x1 - .2) { a.gx = pd.x1 - .2; a.dir = -1; }
+        if (a.gx < pd.x0 + .2) { a.gx = pd.x0 + .2; a.dir = 1; }
         push(a.gx, a.gy, () => {
             const gp = isoWorld(a.gx, a.gy);
             const bob = Math.abs(Math.sin(time * 4 + a.ph)) * .05;
@@ -661,30 +767,6 @@ function pushAnimals(push) {
             const p = gp.add(vec2(0, bob));
             if (a.id === 'hen') drawHen(p, a.dir); else if (a.id === 'cow') drawCow(p, a.dir); else drawSheep(p, a.dir);
         });
-    }
-}
-// штакетник по фронтальным граням загона (динамика — чтобы животные
-// правильно прятались за забором при сортировке)
-const _fencePts = (() => {
-    const pts = [];
-    for (let k = 0; k <= 8; k++) pts.push([-.5 + k * .5, 10.5]);
-    for (let k = 1; k <= 4; k++) pts.push([3.5, 10.5 - k * .5]);
-    return pts;
-})();
-function pushFence(push) {
-    for (let i = 0; i < _fencePts.length; i++) {
-        const [gx, gy] = _fencePts[i];
-        const p = isoWorld(gx, gy);
-        const prev = i ? isoWorld(_fencePts[i - 1][0], _fencePts[i - 1][1]) : null;
-        push(gx, gy, () => {
-            if (prev) {
-                drawLine(prev.add(vec2(0, .16)), p.add(vec2(0, .16)), .05, C('#e7d9b8'));
-                drawLine(prev.add(vec2(0, .36)), p.add(vec2(0, .36)), .05, C('#e7d9b8'));
-            }
-            drawRect(p.add(vec2(0, .26)), vec2(.09, .52), C('#efe4cb'));
-            drawRect(p.add(vec2(0, .04)), vec2(.09, .08), C('#cdbb96'));
-            drawCircle(p.add(vec2(0, .54)), .05, C('#efe4cb'));
-        }, .25);
     }
 }
 // чиби: большая голова, прижатая к телу, два глаза с бликами, румянец

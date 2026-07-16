@@ -70,7 +70,19 @@ button { font-family:inherit; color:var(--ink); }
 
 /* ---------- низ ---------- */
 .bottom { position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom, 0px) + 10px);
-    transform:translateX(-50%); display:flex; gap:8px; z-index:10; flex-wrap:wrap; justify-content:center; max-width:96vw; }
+    transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:8px;
+    z-index:10; max-width:96vw; }
+.brow { display:flex; gap:8px; flex-wrap:nowrap; justify-content:center; }
+.bottom .bbtn { flex-shrink:0; white-space:nowrap; }
+.brow.ads .bbtn { background:#eaf5e2; box-shadow:0 3px 0 #c4dcb0, var(--shadow); }
+.brow.ads .bbtn .ci { width:16px; height:16px; }
+@media (max-width:560px) {
+    .bottom .bbtn { padding:9px 12px; font-size:13px; gap:5px; }
+    .bottom .bbtn .ci, .brow.ads .bbtn .ci { width:15px; height:15px; }
+}
+@media (max-width:380px) {
+    .bottom .bbtn { padding:8px 10px; font-size:12px; }
+}
 .bbtn { display:inline-flex; align-items:center; gap:7px; background:var(--card); border:none;
     border-radius:22px; padding:10px 16px; font-size:14.5px; font-weight:800; cursor:pointer;
     box-shadow:0 3px 0 var(--edge), var(--shadow); }
@@ -211,10 +223,14 @@ button { font-family:inherit; color:var(--ink); }
 </div>
 
 <div class="bottom ui">
-    <button class="bbtn" id="sellBtn" style="display:none"></button>
-    <button class="bbtn" id="cropBtn"></button>
-    <button class="bbtn" id="boostBtn"></button>
-    <button class="bbtn" id="growBtn"></button>
+    <div class="brow">
+        <button class="bbtn" id="sellBtn" style="display:none"></button>
+        <button class="bbtn" id="cropBtn"></button>
+    </div>
+    <div class="brow ads">
+        <button class="bbtn" id="boostBtn"></button>
+        <button class="bbtn" id="growBtn"></button>
+    </div>
 </div>
 
 <!-- Панели -->

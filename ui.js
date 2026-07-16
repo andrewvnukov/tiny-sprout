@@ -184,7 +184,7 @@ function renderHud() {
     $('shopBadge').textContent = shopN > 9 ? '9+' : shopN;
     $('shopBadge').style.display = shopN ? '' : 'none';
     const ps = pendingSeeds();
-    $('prestigeFab').style.display = (ps > 0 || S.cnt.prestiges > 0) ? '' : 'none';
+    $('prestigeFab').style.display = (prestigeUnlocked() && (ps > 0 || S.cnt.prestiges > 0)) ? '' : 'none';
     $('prestigeBadge').textContent = '+' + ps;
     $('prestigeBadge').style.display = ps > 0 ? '' : 'none';
 }
