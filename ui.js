@@ -86,7 +86,7 @@ function initUI() {
     $('shopFab').onclick   = () => { openSheet('shopSheet'); renderShop(); };
     $('albumFab').onclick  = () => { openSheet('albumSheet'); renderAlbum(); };
     $('prestigeFab').onclick = showPrestige;
-    $('cropBtn').onclick   = () => { shopTab = 'seeds'; openSheet('shopSheet'); renderShop(); };
+    $('cropBtn').onclick   = () => { openSheet('cropSheet'); renderCropPick(); };
     $('boostBtn').onclick  = adBoost;
     $('growBtn').onclick   = adGrowAll;
     $('muteBtn').onclick   = () => { toggleMute(); renderHud(); };
@@ -172,14 +172,49 @@ function renderHud() {
         + S.quests.filter(q => !q.claimed && qProg(q) >= q.n).length;
     $('orderBadge').textContent = ordReady;
     $('orderBadge').style.display = ordReady ? '' : 'none';
+    const av = shopAvail(), shopN = av.seeds + av.ups + av.work + av.anim;
+    $('shopBadge').textContent = shopN > 9 ? '9+' : shopN;
+    $('shopBadge').style.display = shopN ? '' : 'none';
     const ps = pendingSeeds();
     $('prestigeFab').style.display = (ps > 0 || S.cnt.prestiges > 0) ? '' : 'none';
     $('prestigeBadge').textContent = '+' + ps;
     $('prestigeBadge').style.display = ps > 0 ? '' : 'none';
 }
 
+// ---------- Выбор культуры (только купленные) ----------
+function renderCropPick() {
+    let h = '';
+    CROPS.forEach((c, i) => {
+        if (!S.crops[i]) return;
+        h += `<button class="cell pick ${i === S.lastCrop ? 'sel' : ''}" onclick="pickCrop(${i})">
+            <div class="big">${ic(c.id)}</div><small>${c.name}</small></button>`;
+    });
+    h += `<button class="cell pick" onclick="openShopSeeds()"><div class="big"><span>+</span></div><small>купить</small></button>`;
+    $('cropPickList').innerHTML = h;
+}
+function pickCrop(i) {
+    S.lastCrop = i;
+    sfx('click');
+    persist();
+    renderHud();
+    closeAllSheets();
+}
+function openShopSeeds() { shopTab = 'seeds'; openSheet('shopSheet'); renderShop(); }
+
 // ---------- Магазин ----------
+// доступные покупки по вкладкам (для точек и бейджа)
+function shopAvail() {
+    return {
+        seeds: CROPS.filter((c, i) => !S.crops[i] && c.zone < S.zones && S.coins >= c.unlock).length,
+        ups:   UPS.filter(u => S.coins >= upCost(u, S.up[u.id])).length,
+        work:  WORKERS.filter(w => S.workers[w.id] < w.max && S.coins >= workerCost(w, S.workers[w.id])).length,
+        anim:  ANIMALS.filter(a => S.animals[a.id] < a.max && S.coins >= animalCost(a, S.animals[a.id])).length,
+    };
+}
 function renderShop() {
+    const avail = shopAvail();
+    for (const b of document.querySelectorAll('#shopSheet .tab'))
+        b.classList.toggle('dot', !!avail[b.dataset.tab]);
     for (const b of document.querySelectorAll('#shopSheet .tab'))
         b.classList.toggle('on', b.dataset.tab === shopTab);
     const box = $('shopList');

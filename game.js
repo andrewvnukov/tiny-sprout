@@ -460,9 +460,9 @@ function plotPos(i) { const g = plotGrid(i); return isoWorld(g.gx, g.gy); }
 function zoneCenterGrid(z) { return { gx: 1.5, gy: z * 3 + 0.5 }; }
 function zoneSignPos(z) { const g = zoneCenterGrid(z); return isoWorld(g.gx, g.gy); }
 // постройки/пруд — на своих клетках (используются рендером)
-const BARN_G  = { gx: -2, gy: 1 };
-const HOUSE_G = { gx: -2, gy: 5 };
-const POND_G  = { gx: 5, gy: 6 };
+const BARN_G  = { gx: -4, gy: 0 };
+const HOUSE_G = { gx: -4, gy: 4 };
+const POND_G  = { gx: 6, gy: 6 };
 const PATH_CELLS = [];
 for (let gx = 0; gx <= 3; gx++) { PATH_CELLS.push([gx, 2]); PATH_CELLS.push([gx, 5]); }
 const FIELD_CX = -2.84, FIELD_CY = -3.6;          // центр поля (world)

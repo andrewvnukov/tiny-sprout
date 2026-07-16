@@ -678,56 +678,76 @@ function pushFence(push) {
         }, .25);
     }
 }
+// чиби: большая голова, прижатая к телу, два глаза с бликами, румянец
 function drawHen(p, dir) {
-    drawLine(p.add(vec2(-.07, 0)), p.add(vec2(-.07, .14)), .035, C('#eda63f'));
-    drawLine(p.add(vec2(.08, 0)), p.add(vec2(.08, .14)), .035, C('#eda63f'));
-    drawEllipse(p.add(vec2(-.3 * dir, .42)), vec2(.16, .09), C('#e6dcc6'), dir * .7);
-    drawEllipse(p.add(vec2(-.34 * dir, .34)), vec2(.14, .08), C('#d3c8ad'), dir * .3);
-    drawEllipse(p.add(vec2(0, .3)), vec2(.34, .28), C('#f6efdf'));
-    drawEllipse(p.add(vec2(-.06 * dir, .28)), vec2(.19, .13), C('#e6dcc6'), -dir * .2);
-    drawEllipse(p.add(vec2(-.08 * dir, .25)), vec2(.13, .08), C('#d3c8ad'), -dir * .2);
-    drawCircle(p.add(vec2(.2 * dir, .52)), .17, C('#f6efdf'));
-    for (let i = 0; i < 3; i++) drawCircle(p.add(vec2((.13 + i * .06) * dir, .68 - Math.abs(i - 1) * .015)), .05, C('#e2725a'));
-    drawCircle(p.add(vec2(.24 * dir, .38)), .045, C('#e2725a'));
-    drawPoly([vec2(0, .035), vec2(.13 * dir, 0), vec2(0, -.035)], C('#eda63f'), 0, undefined, p.add(vec2(.34 * dir, .5)));
-    drawCircle(p.add(vec2(.24 * dir, .55)), .035, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.25 * dir, .565)), .013, C('#ffffff'));
-    drawCircle(p.add(vec2(.17 * dir, .46)), .04, new Color(.95, .66, .6, .5));
+    drawLine(p.add(vec2(-.05, 0)), p.add(vec2(-.05, .12)), .035, C('#eda63f'));
+    drawLine(p.add(vec2(.07, 0)), p.add(vec2(.07, .12)), .035, C('#eda63f'));
+    // хвостик — прижат к телу
+    drawEllipse(p.add(vec2(-.22 * dir, .32)), vec2(.14, .1), C('#e6dcc6'), dir * .5);
+    drawEllipse(p.add(vec2(0, .26)), vec2(.28, .23), C('#f6efdf'));
+    drawEllipse(p.add(vec2(-.08 * dir, .24)), vec2(.12, .08), C('#eee4cd'), -dir * .3);
+    // голова — большая, глубоко сидит на теле
+    drawCircle(p.add(vec2(.06 * dir, .46)), .24, C('#f6efdf'));
+    for (let i = 0; i < 3; i++)
+        drawCircle(p.add(vec2((-.02 + i * .08) * dir, .7 - Math.abs(i - 1) * .02)), .05, C('#e2725a'));
+    drawPoly([vec2(-.04, .035), vec2(.09 * dir, -.01), vec2(-.04, -.05)], C('#eda63f'), 0, undefined, p.add(vec2(.28 * dir, .44)));
+    drawCircle(p.add(vec2(.24 * dir, .34)), .04, C('#e2725a'));
+    drawCircle(p.add(vec2(0, .5)), .045, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.17 * dir, .5)), .045, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.015 * dir, .515)), .016, C('#ffffff'));
+    drawCircle(p.add(vec2(.185 * dir, .515)), .016, C('#ffffff'));
+    drawCircle(p.add(vec2(-.09 * dir, .41)), .045, new Color(.95, .66, .6, .55));
+    drawCircle(p.add(vec2(.25 * dir, .43)), .04, new Color(.95, .66, .6, .55));
 }
 function drawCow(p, dir) {
-    for (const ox of [-.3, -.12, .14, .32]) {
-        drawRect(p.add(vec2(ox, .14)), vec2(.09, .26), C('#e3d8c2'));
-        drawRect(p.add(vec2(ox, .03)), vec2(.1, .07), C('#4a3b2e'));
+    for (const ox of [-.3, -.13, .1, .27]) {
+        drawRect(p.add(vec2(ox, .12)), vec2(.1, .24), C('#ece2cd'));
+        drawRect(p.add(vec2(ox, .025)), vec2(.11, .05), C('#8a7460'));
     }
-    drawLine(p.add(vec2(-.5 * dir, .52)), p.add(vec2(-.62 * dir, .18)), .035, C('#e3d8c2'));
-    drawCircle(p.add(vec2(-.62 * dir, .15)), .05, C('#4a3b2e'));
-    drawEllipse(p.add(vec2(0, .47)), vec2(.56, .38), C('#f5f0e4'));
-    drawEllipse(p.add(vec2(-.2, .52)), vec2(.19, .14), C('#c9b89a'), .3);
-    drawEllipse(p.add(vec2(.14, .36)), vec2(.15, .11), C('#c9b89a'), -.2);
-    drawEllipse(p.add(vec2(.46 * dir, .62)), vec2(.26, .22), C('#f5f0e4'));
-    drawEllipse(p.add(vec2(.3 * dir, .8)), vec2(.1, .06), C('#e3d8c2'), -.6 * dir);
-    drawEllipse(p.add(vec2(.62 * dir, .78)), vec2(.1, .06), C('#e3d8c2'), .6 * dir);
-    drawLine(p.add(vec2(.36 * dir, .82)), p.add(vec2(.33 * dir, .92)), .045, C('#d9c9a8'));
-    drawLine(p.add(vec2(.55 * dir, .82)), p.add(vec2(.58 * dir, .92)), .045, C('#d9c9a8'));
-    drawEllipse(p.add(vec2(.56 * dir, .52)), vec2(.18, .13), C('#f3c1b4'));
-    drawCircle(p.add(vec2(.5 * dir, .52)), .028, C('#d59685'));
-    drawCircle(p.add(vec2(.62 * dir, .52)), .028, C('#d59685'));
-    drawCircle(p.add(vec2(.36 * dir, .68)), .04, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.52 * dir, .68)), .04, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.375 * dir, .69)), .014, C('#ffffff'));
+    // хвостик — короткий, прижат к боку
+    drawLine(p.add(vec2(-.46 * dir, .44)), p.add(vec2(-.56 * dir, .26)), .035, C('#ece2cd'));
+    drawCircle(p.add(vec2(-.57 * dir, .24)), .045, C('#8a7460'));
+    // тело — крупное, голова не перекрывает его целиком
+    drawEllipse(p.add(vec2(-.06 * dir, .4)), vec2(.5, .32), C('#f5f0e4'));
+    drawEllipse(p.add(vec2(-.28 * dir, .46)), vec2(.15, .11), C('#d9c9ae'), .3);
+    drawEllipse(p.add(vec2(-.04 * dir, .24)), vec2(.12, .08), C('#d9c9ae'), -.2);
+    // голова
+    drawEllipse(p.add(vec2(.32 * dir, .56)), vec2(.26, .23), C('#f5f0e4'));
+    // ушки — по бокам, горизонтальные
+    drawEllipse(p.add(vec2(.1 * dir, .64)), vec2(.09, .055), C('#ece2cd'), .25 * dir);
+    drawEllipse(p.add(vec2(.54 * dir, .64)), vec2(.09, .055), C('#ece2cd'), -.25 * dir);
+    // рожки — маленькие круглые бугорки
+    drawCircle(p.add(vec2(.22 * dir, .77)), .05, C('#d9c9a8'));
+    drawCircle(p.add(vec2(.42 * dir, .77)), .05, C('#d9c9a8'));
+    // морда
+    drawEllipse(p.add(vec2(.36 * dir, .46)), vec2(.19, .12), C('#f3c1b4'));
+    drawCircle(p.add(vec2(.29 * dir, .46)), .028, C('#d59685'));
+    drawCircle(p.add(vec2(.43 * dir, .46)), .028, C('#d59685'));
+    drawCircle(p.add(vec2(.22 * dir, .62)), .05, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.44 * dir, .62)), .05, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.237 * dir, .637)), .018, C('#ffffff'));
+    drawCircle(p.add(vec2(.457 * dir, .637)), .018, C('#ffffff'));
+    drawCircle(p.add(vec2(.14 * dir, .52)), .045, new Color(.95, .66, .6, .5));
+    drawCircle(p.add(vec2(.52 * dir, .53)), .04, new Color(.95, .66, .6, .5));
 }
 function drawSheep(p, dir) {
-    for (const ox of [-.2, .2]) drawRect(p.add(vec2(ox, .1)), vec2(.09, .2), C('#c9b8a4'));
-    for (const [x, y, r] of [[0, .38, .34], [-.26, .42, .24], [.26, .42, .24], [-.14, .55, .22], [.14, .55, .22]])
-        drawCircle(p.add(vec2(x, y)), r * 1.15, C('#f2ecdd'));
-    drawCircle(p.add(vec2(0, .44)), .34, C('#faf6ea'));
-    drawCircle(p.add(vec2(.38 * dir, .48)), .19, C('#d9c2ad'));
-    drawEllipse(p.add(vec2(.26 * dir, .58)), vec2(.09, .05), C('#c8ad94'), -.5 * dir);
-    drawCircle(p.add(vec2(.32 * dir, .64)), .11, C('#f2ecdd'));
-    drawCircle(p.add(vec2(.36 * dir, .52)), .035, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.45 * dir, .52)), .035, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.37 * dir, .53)), .012, C('#ffffff'));
-    drawCircle(p.add(vec2(.4 * dir, .42)), .045, new Color(.95, .66, .6, .5));
+    for (const ox of [-.18, .18]) drawRect(p.add(vec2(ox, .08)), vec2(.09, .16), C('#c9b8a4'));
+    for (const [x, y, r] of [[-.24, .32, .2], [.24, .32, .2], [0, .28, .22], [-.14, .46, .2], [.14, .46, .2], [0, .5, .2]])
+        drawCircle(p.add(vec2(x, y)), r * 1.12, C('#f2ecdd'));
+    drawCircle(p.add(vec2(0, .38)), .3, C('#faf6ea'));
+    // мордочка — выдвинута из шерсти, хорошо видна
+    drawEllipse(p.add(vec2(.28 * dir, .48)), vec2(.21, .18), C('#d9c2ad'));
+    drawEllipse(p.add(vec2(.1 * dir, .58)), vec2(.09, .05), C('#c8ad94'), -.5 * dir);
+    // чубчик
+    drawCircle(p.add(vec2(.2 * dir, .66)), .11, C('#f2ecdd'));
+    drawCircle(p.add(vec2(.33 * dir, .64)), .09, C('#faf6ea'));
+    drawCircle(p.add(vec2(.2 * dir, .52)), .042, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.37 * dir, .52)), .042, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.214 * dir, .534)), .015, C('#ffffff'));
+    drawCircle(p.add(vec2(.384 * dir, .534)), .015, C('#ffffff'));
+    drawEllipse(p.add(vec2(.28 * dir, .43)), vec2(.035, .025), C('#b09272'));
+    drawCircle(p.add(vec2(.13 * dir, .44)), .04, new Color(.95, .66, .6, .5));
+    drawCircle(p.add(vec2(.43 * dir, .45)), .035, new Color(.95, .66, .6, .5));
 }
 
 // ---------- Работники ----------
