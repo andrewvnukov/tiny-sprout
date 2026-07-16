@@ -629,6 +629,10 @@ function boot(raw) {
 }
 (function start() {
     setShowSplashScreen(false);
+    // 2D-режим: статичный мир печётся в offscreen-канвас и рисуется одним
+    // drawImage, поверх — немного примитивов; порядок отрисовки сохраняется
+    setGLEnable(false);
+    setTilesPixelated(false);   // сглаживание drawImage запечённого мира (не пиксель-арт)
     engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
     const localRaw = (() => { try { return localStorage.getItem(SAVE_KEY); } catch(e) { return null; } })();
     let done = false;

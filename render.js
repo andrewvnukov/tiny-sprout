@@ -1,8 +1,11 @@
 'use strict';
 // ============================================================
-// render.js — изометрический мир (процедурный), тёплая пастель.
-// Контент лежит на ромбической сетке (isoWorld из game.js),
-// глубина = gx+gy (дальше рисуем раньше). Камера пан/зум.
+// render.js — изометрический мир, тёплая пастель.
+// Статичный мир (земля, тропинки, постройки, короба грядок,
+// деревья, декор) ПЕЧЁТСЯ ОДИН РАЗ в offscreen-канвас и каждый
+// кадр рисуется одним drawImage — скролл ровный, без генерации.
+// Поверх — только динамика: культуры, животные, работники,
+// частицы, дым, рябь. Глубина = gx+gy (дальше — раньше).
 // ============================================================
 
 const _hexCache = {};
@@ -15,12 +18,26 @@ function D(hex, k) {
 const SHADOW = new Color(.28, .24, .14, .22);
 const INKT = '#5b4a3a';
 
-// ромб-полигон (верхняя грань плитки), центр в pos
+// ромб-полигон (верхняя грань плитки), центр в pos — для динамики
 function isoTile(pos, hw, hh, col) {
     drawPoly([vec2(0, hh), vec2(hw, 0), vec2(0, -hh), vec2(-hw, 0)], col, 0, undefined, pos);
 }
-function quad(pos, a, b, c, d, col) { drawPoly([a, b, c, d], col, 0, undefined, pos); }
-function L2(a, b, t) { return vec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t); }
+
+// ---------- Константы мира ----------
+const PPU = 48;                                   // px на world-единицу в запечённом канвасе
+const WX0 = -35.5, WX1 = 27, WY0 = -18.5, WY1 = 14.5;   // границы запечённого мира (world)
+const TILE_GX0 = -10, TILE_GX1 = 10, TILE_GY0 = -8, TILE_GY1 = 14;
+const BED_DEP = .34;                              // высота короба грядки (world)
+const BLD = { half: 2, foot: .3, wall: 2.0, roof: 1.8 }; // постройка: 2×2 клетки, размеры в world
+const PONDC = () => isoWorld(POND_G.gx + .5, POND_G.gy + .5);
+// точка дыма над трубой дома (world)
+function chimneyPos() {
+    const cc = isoWorld(HOUSE_G.gx + .5, HOUSE_G.gy + .5);
+    return cc.add(vec2(-IW, BLD.foot + BLD.wall + BLD.roof * .5 + .45));
+}
+
+// детерминированный шум (декор не «пересеивается» при перепечке)
+function rnd(s) { s = Math.sin(s * 127.1 + 311.7) * 43758.5; return s - Math.floor(s); }
 
 // ---------- Занятость клеток + декор (строго по сетке) ----------
 let decor = null, OCC = null;
@@ -29,8 +46,8 @@ function buildOcc() {
     OCC = new Set();
     for (let i = 0; i < MAXPLOTS; i++) { const g = plotGrid(i); OCC.add(cellKey(g.gx, g.gy)); }
     for (const [gx, gy] of PATH_CELLS) OCC.add(cellKey(gx, gy));
-    for (const b of [BARN_G, HOUSE_G, POND_G])                  // здания занимают 3×3
-        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) OCC.add(cellKey(b.gx + dx, b.gy + dy));
+    for (const b of [BARN_G, HOUSE_G, POND_G])                  // 2×2 клетки + кольцо
+        for (let dx = -1; dx <= 2; dx++) for (let dy = -1; dy <= 2; dy++) OCC.add(cellKey(b.gx + dx, b.gy + dy));
     for (let gx = 0; gx <= 3; gx++) for (let gy = 9; gy <= 10; gy++) OCC.add(cellKey(gx, gy)); // загон
 }
 const cellFree = (gx, gy) => !OCC.has(cellKey(gx, gy));
@@ -44,13 +61,350 @@ function initWorldDecor() {
     const mk = (n, f) => { const o = []; for (let k = 0; k < n && idx < cells.length; k++) o.push(f(cells[idx++])); return o; };
     decor = {
         clouds: Array.from({ length: 5 }, () => ({ x: R(-16, 16), y: R(3, 8), s: R(.9, 1.7), v: R(.05, .14) })),
-        flowers: mk(14, c => ({ gx: c[0], gy: c[1], s: R(.1, .15), h: ['#eda3b4', '#f2d98a', '#f7f2e4', '#c3a8dd'][Math.floor(R(0, 4))] })),
-        grass:   mk(20, c => ({ gx: c[0], gy: c[1], s: R(.16, .26) })),
-        stones:  mk(6,  c => ({ gx: c[0], gy: c[1], s: R(.12, .22) })),
+        flowers: mk(14, c => ({ gx: c[0], gy: c[1], s: R(.8, 1.2), h: ['#eda3b4', '#f2d98a', '#f7f2e4', '#c3a8dd'][Math.floor(R(0, 4))] })),
+        grass:   mk(20, c => ({ gx: c[0], gy: c[1], s: R(.8, 1.3) })),
+        stones:  mk(6,  c => ({ gx: c[0], gy: c[1], s: R(.7, 1.2) })),
         trees: [],
         btf: Array.from({ length: 4 }, () => ({ x: R(-8, 2), y: R(-5, 0), p: R(0, 9) })),
     };
     for (let gx = -3; gx <= 6; gx++) if (cellFree(gx, -3)) decor.trees.push({ gx, gy: -3, s: R(.85, 1.15) }); // ряд деревьев сзади
+}
+
+// ============================================================
+// Запечка статичного мира (raw Canvas2D — градиенты, штрихи)
+// ============================================================
+let worldCanvas = null, worldSig = '';
+function worldSigNow() {
+    return S.zones + ':' + S.plots.length + ':' + ((S.animals.hen + S.animals.cow + S.animals.sheep) > 0 ? 1 : 0);
+}
+function buildWorld() {
+    worldSig = worldSigNow();
+    if (!worldCanvas) worldCanvas = document.createElement('canvas');
+    const W = Math.round((WX1 - WX0) * PPU), H = Math.round((WY1 - WY0) * PPU);
+    worldCanvas.width = W; worldCanvas.height = H;
+    const x = worldCanvas.getContext('2d');
+    const TW = IW * PPU, TH = IH * PPU, z = TW / 42;   // z ≈ масштаб констант пруф-концепта
+    x.lineCap = 'round'; x.lineJoin = 'round';
+
+    // мир → канвас (y мира вверх, канваса вниз)
+    const P = (wx, wy) => ({ x: (wx - WX0) * PPU, y: (WY1 - wy) * PPU });
+    const G = (gx, gy) => P((gx - gy) * IW, -(gx + gy) * IH);
+
+    // --- локальные помощники ---
+    function rhombusPath(cx, cy, w, h) {
+        x.beginPath(); x.moveTo(cx, cy - h); x.lineTo(cx + w, cy); x.lineTo(cx, cy + h); x.lineTo(cx - w, cy); x.closePath();
+    }
+    function rhombus(cx, cy, w, h, fill) { rhombusPath(cx, cy, w, h); x.fillStyle = fill; x.fill(); }
+    function quad(a, b, c, d, fill) {
+        x.beginPath(); x.moveTo(a.x, a.y); x.lineTo(b.x, b.y); x.lineTo(c.x, c.y); x.lineTo(d.x, d.y); x.closePath();
+        x.fillStyle = fill; x.fill();
+    }
+    function lerp(a, b, t) { return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; }
+    function seg(x0, y0, x1, y1) { x.beginPath(); x.moveTo(x0, y0); x.lineTo(x1, y1); x.stroke(); }
+    function ell(cx, cy, rx, ry) { x.beginPath(); x.ellipse(cx, cy, rx, ry, 0, 0, 7); x.fill(); }
+    function softShadow(cx, cy, rx, ry, a = .18) {
+        const g = x.createRadialGradient(cx, cy, 0, cx, cy, rx);
+        g.addColorStop(0, `rgba(40,30,15,${a})`); g.addColorStop(1, 'rgba(40,30,15,0)');
+        x.save(); x.translate(cx, cy); x.scale(1, ry / rx); x.beginPath(); x.arc(0, 0, rx, 0, 7); x.fillStyle = g; x.fill(); x.restore();
+    }
+    const COL = {
+        soil: '#7a5334', soilHi: '#916441', furrow: '#5a3a22',
+        wood: '#c99a5f', woodHi: '#e2ba79', woodLo: '#9c7139', woodSeam: '#8a6231',
+        wall: '#f0dcb0', wallSide: '#d8bd88', plankSeam: '#c9a86f',
+        stone: '#b7ad98', stoneHi: '#d0c7b2', stoneLo: '#948b78',
+        path: '#cbb083', pathLo: '#b6996b', pebble: '#a68a5e',
+        grassBlade: '#6ba03e',
+    };
+
+    // ---------- земля ----------
+    x.fillStyle = '#9cc06a'; x.fillRect(0, 0, W, H);
+    for (let gx = TILE_GX0; gx <= TILE_GX1; gx++)
+        for (let gy = TILE_GY0; gy <= TILE_GY1; gy++) {
+            const s = G(gx, gy);
+            rhombus(s.x, s.y, TW * 1.02, TH * 1.02, (gx + gy) & 1 ? '#98bd66' : '#a1c66e');
+        }
+    // растворяем шахматку в цвет луга к краям запечённой области
+    {
+        const c0 = G(1.5, 3.5);                    // центр фермы
+        const g = x.createRadialGradient(c0.x, c0.y, 10 * PPU, c0.x, c0.y, 24 * PPU);
+        g.addColorStop(0, 'rgba(156,192,106,0)'); g.addColorStop(1, '#9cc06a');
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+    }
+    // мягкая пятнистость луга
+    for (let i = 0; i < 10; i++) {
+        const s = G(rnd(i * 7) * 16 - 8, rnd(i * 13) * 18 - 6);
+        const g = x.createRadialGradient(s.x, s.y, 0, s.x, s.y, 230 * z);
+        g.addColorStop(0, i % 2 ? 'rgba(255,255,255,.05)' : 'rgba(55,105,40,.07)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        x.fillStyle = g; x.beginPath(); x.arc(s.x, s.y, 230 * z, 0, 7); x.fill();
+    }
+
+    // ---------- участки зон (плиты под грядки) ----------
+    for (let zi = 0; zi < ZONES.length && zi <= S.zones; zi++) {
+        const unlocked = zi < S.zones;
+        for (let cx = 0; cx <= 3; cx++) for (let gy = zi * 3; gy <= zi * 3 + 1; gy++) {
+            const s = G(cx, gy);
+            rhombus(s.x, s.y, TW * 1.02, TH * 1.02,
+                unlocked ? (zi === 2 ? '#b3d089' : '#a9c97e') : 'rgba(228,234,200,.28)');
+        }
+        if (!unlocked) {                            // пунктир «будущего участка»
+            const A = G(-.5, zi * 3 - .5), Bc = G(3.5, zi * 3 - .5), Cc = G(3.5, zi * 3 + 1.5), Dd = G(-.5, zi * 3 + 1.5);
+            x.setLineDash([8 * z, 6 * z]);
+            x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 2 * z;
+            x.beginPath(); x.moveTo(A.x, A.y); x.lineTo(Bc.x, Bc.y); x.lineTo(Cc.x, Cc.y); x.lineTo(Dd.x, Dd.y); x.closePath(); x.stroke();
+            x.setLineDash([]);
+        }
+    }
+
+    // ---------- тропинки с камешками ----------
+    for (const [gx, gy] of PATH_CELLS) {
+        const s = G(gx, gy);
+        rhombus(s.x, s.y, TW * 1.02, TH * 1.02, COL.pathLo);
+        rhombus(s.x, s.y, TW * .9, TH * .9, COL.path);
+        x.fillStyle = COL.pebble;
+        for (let i = 0; i < 6; i++) {
+            const a = rnd(gx * 31 + gy * 17 + i), b = rnd(gx * 13 + gy * 41 + i * 3);
+            ell(s.x + (a - .5) * TW * 1.1, s.y + (b - .5) * TH * 1.1, 2.4 * z, 1.4 * z);
+        }
+    }
+
+    // ---------- травинки (кроме занятых клеток) ----------
+    x.strokeStyle = COL.grassBlade; x.lineWidth = 1.3 * z; x.globalAlpha = .6;
+    for (let gx = TILE_GX0 + 1; gx < TILE_GX1; gx++)
+        for (let gy = TILE_GY0 + 1; gy < TILE_GY1; gy++) {
+            if (!cellFree(gx, gy)) continue;
+            const r = rnd(gx * 57 + gy * 131);
+            if (r > .5) continue;
+            const s = G(gx + rnd(r) - .5, gy + rnd(r * 3) - .5);
+            for (let k = -1; k <= 1; k++)
+                seg(s.x + k * 2.4 * z, s.y, s.x + k * 2.4 * z + (r - .5) * 3 * z, s.y - 5.5 * z);
+        }
+    x.globalAlpha = 1;
+
+    // ---------- объекты с сортировкой по глубине ----------
+    const items = [];
+    const put = (d, fn) => items.push({ d, fn });
+
+    // деревья: тень, ствол и крона из ОДНОЙ опорной точки (низ клетки)
+    function tree(t) {
+        const s = G(t.gx, t.gy), k = t.s * z;
+        softShadow(s.x + 2 * k, s.y + 1.5 * k, 20 * k, 7.5 * k, .22);
+        x.fillStyle = '#9a7a58'; x.fillRect(s.x - 3.4 * k, s.y - 30 * k, 6.8 * k, 31 * k);
+        x.fillStyle = 'rgba(0,0,0,.12)'; x.fillRect(s.x + .6 * k, s.y - 30 * k, 2.8 * k, 31 * k);
+        x.fillStyle = '#679455'; ell(s.x, s.y - 44 * k, 24 * k, 24 * k);
+        x.fillStyle = '#6f9c5c'; ell(s.x + 10 * k, s.y - 40 * k, 14 * k, 14 * k);
+        x.fillStyle = '#7fac68'; ell(s.x - 9 * k, s.y - 52 * k, 15 * k, 15 * k);
+        x.fillStyle = '#8fbc76'; ell(s.x - 4 * k, s.y - 58 * k, 9 * k, 9 * k);
+        // пара «яблок» света
+        x.fillStyle = 'rgba(255,255,255,.15)'; ell(s.x - 12 * k, s.y - 55 * k, 5 * k, 4 * k);
+    }
+    for (const t of decor.trees) put(t.gx + t.gy, () => tree(t));
+
+    // короб грядки: НИЗ по границе клетки, борта растут вверх
+    function bedBox(gx, gy) {
+        const s = G(gx, gy), w = TW * .99, h = TH * .99, dep = BED_DEP * PPU;
+        const L = { x: s.x - w, y: s.y }, B = { x: s.x, y: s.y + h }, R = { x: s.x + w, y: s.y }, Tt = { x: s.x, y: s.y - h };
+        softShadow(s.x, s.y + h * .5, w * 1.12, h * .8, .15);
+        // боковые доски (вверх от границы клетки)
+        quad(L, B, { x: B.x, y: B.y - dep }, { x: L.x, y: L.y - dep }, COL.woodLo);
+        quad(B, R, { x: R.x, y: R.y - dep }, { x: B.x, y: B.y - dep }, COL.wood);
+        x.strokeStyle = COL.woodSeam; x.lineWidth = 1.2 * z;
+        for (let i = 1; i < 4; i++) {
+            const t = i / 4, p1 = lerp(L, B, t), p2 = lerp(B, R, t);
+            seg(p1.x, p1.y - dep * .12, p1.x, p1.y - dep * .88);
+            seg(p2.x, p2.y - dep * .12, p2.x, p2.y - dep * .88);
+        }
+        // верхняя рамка
+        rhombus(s.x, s.y - dep, w, h, COL.woodHi);
+        // угловые столбики
+        x.fillStyle = COL.woodLo;
+        for (const c of [L, B, R]) x.fillRect(c.x - 2.3 * z, c.y - dep - 3.4 * z, 4.6 * z, dep + 4.4 * z);
+        x.fillRect(Tt.x - 2.3 * z, Tt.y - dep - 3.4 * z, 4.6 * z, dep + 3.4 * z);
+        // земля с крошкой и бороздами
+        rhombus(s.x, s.y - dep, w * .74, h * .74, COL.soil);
+        x.fillStyle = COL.soilHi;
+        for (let i = 0; i < 12; i++) {
+            const a = rnd(gx * 7 + i) - .5, b = rnd(gy * 9 + i * 2) - .5;
+            const wx = (a + b) * w * .6, wy = (b - a) * h * .6;
+            ell(s.x + wx, s.y - dep + wy, 1.3 * z, .9 * z);
+        }
+        x.strokeStyle = COL.furrow; x.lineWidth = 2 * z;
+        for (let k = -1; k <= 1; k++) {
+            const ox = w * k * .22, oy = -h * k * .22;
+            seg(s.x + ox - w * .32, s.y - dep + oy - h * .32, s.x + ox + w * .32, s.y - dep + oy + h * .32);
+        }
+    }
+    for (let i = 0; i < S.plots.length; i++) { const g = plotGrid(i); put(g.gx + g.gy, () => bedBox(g.gx, g.gy)); }
+
+    // постройка 2×2 клетки: низ ромба точно по линиям сетки
+    function bldg(g, isBarn) {
+        const s = G(g.gx + .5, g.gy + .5);
+        const bw = 2 * TW, bh = 2 * TH;
+        const wallH = BLD.wall * PPU, roofH = BLD.roof * PPU, foot = BLD.foot * PPU;
+        softShadow(s.x + bw * .06, s.y + bh * .45, bw * 1.15, bh * .95, .24);
+        const B = { x: s.x, y: s.y + bh }, L = { x: s.x - bw, y: s.y }, R = { x: s.x + bw, y: s.y };
+        // каменный фундамент
+        quad(L, B, { x: B.x, y: B.y - foot }, { x: L.x, y: L.y - foot }, COL.stoneLo);
+        quad(B, R, { x: R.x, y: R.y - foot }, { x: B.x, y: B.y - foot }, COL.stone);
+        x.fillStyle = COL.stoneHi;
+        for (let i = 0; i < 9; i++) { const p = lerp(B, R, rnd(g.gx * 5 + i)); ell(p.x, p.y - foot * .5, 3.2 * z, 1.9 * z); }
+        // стены
+        const wL = { x: L.x, y: L.y - foot }, wB = { x: B.x, y: B.y - foot }, wR = { x: R.x, y: R.y - foot };
+        quad(wL, wB, { x: wB.x, y: wB.y - wallH }, { x: wL.x, y: wL.y - wallH }, isBarn ? '#a84a33' : COL.wallSide);
+        quad(wB, wR, { x: wR.x, y: wR.y - wallH }, { x: wB.x, y: wB.y - wallH }, isBarn ? '#c9553c' : COL.wall);
+        // швы досок
+        x.strokeStyle = isBarn ? 'rgba(120,40,25,.5)' : COL.plankSeam; x.lineWidth = 1.2 * z;
+        for (let i = 1; i < 6; i++) {
+            const t = i / 6, a = lerp(wL, wB, t), b = lerp(wB, wR, t);
+            seg(a.x, a.y, a.x, a.y - wallH);
+            seg(b.x, b.y, b.x, b.y - wallH);
+        }
+        const faceB = t => lerp(wB, wR, t);
+        if (isBarn) {
+            // большие ворота с X-раскосами
+            const d0 = faceB(.26), d1 = faceB(.74);
+            const t0 = { x: d0.x, y: d0.y - wallH * .8 }, t1 = { x: d1.x, y: d1.y - wallH * .8 };
+            quad(d0, d1, t1, t0, '#7e3826');
+            x.strokeStyle = '#f0dcb0'; x.lineWidth = 3 * z;
+            seg(d0.x, d0.y, t1.x, t1.y); seg(d1.x, d1.y, t0.x, t0.y);
+            const md = faceB(.5); seg(md.x, md.y, md.x, md.y - wallH * .8);
+            // сеновал-оконце под крышей
+            const h0 = faceB(.42), h1 = faceB(.58);
+            quad({ x: h0.x, y: h0.y - wallH * .88 }, { x: h1.x, y: h1.y - wallH * .88 },
+                 { x: h1.x, y: h1.y - wallH * 1.02 }, { x: h0.x, y: h0.y - wallH * 1.02 }, '#5f2a1c');
+        } else {
+            // дверь с филёнкой и ручкой
+            const d0 = faceB(.22), d1 = faceB(.42);
+            quad(d0, d1, { x: d1.x, y: d1.y - wallH * .6 }, { x: d0.x, y: d0.y - wallH * .6 }, '#9c7139');
+            x.strokeStyle = 'rgba(80,50,20,.6)'; x.lineWidth = 1.5 * z;
+            const dm = lerp(d0, d1, .5);
+            x.strokeRect(dm.x - 6 * z, dm.y - wallH * .5, 12 * z, wallH * .32);
+            x.fillStyle = '#ffd95e'; ell(d1.x - 3 * z, d1.y - wallH * .3, 1.8 * z, 1.8 * z);
+            // окно: крест, ставни, ящик с цветами
+            const w0 = faceB(.6), w1 = faceB(.82), wy = -wallH * .48;
+            quad({ x: w0.x, y: w0.y + wy }, { x: w1.x, y: w1.y + wy },
+                 { x: w1.x, y: w1.y + wy - wallH * .3 }, { x: w0.x, y: w0.y + wy - wallH * .3 }, '#bfe4ec');
+            x.strokeStyle = '#f0dcb0'; x.lineWidth = 2.4 * z;
+            const wc = lerp(w0, w1, .5);
+            seg(wc.x, wc.y + wy, wc.x, wc.y + wy - wallH * .3);
+            seg(w0.x, w0.y + wy - wallH * .15, w1.x, w1.y + wy - wallH * .15);
+            x.strokeStyle = '#c9a86f'; x.lineWidth = 2 * z;
+            x.strokeRect(w0.x - 1 * z, w0.y + wy - wallH * .3, (w1.x - w0.x) + 2 * z, wallH * .3 + (w1.y - w0.y));
+            x.fillStyle = '#a2793f'; x.fillRect(wc.x - 9 * z, wc.y + wy - 1 * z, 18 * z, 4 * z);
+            for (let i = 0; i < 3; i++) {
+                x.fillStyle = ['#ff9ec2', '#ffd95e', '#c79bff'][i];
+                ell(wc.x + (i - 1) * 6 * z, wc.y + wy - 2.4 * z, 2.2 * z, 2.2 * z);
+            }
+        }
+        // крыша с черепицей
+        const ry = -wallH - foot, apex = { x: s.x, y: s.y + ry - roofH };
+        const eL = { x: L.x, y: L.y + ry }, eB = { x: B.x, y: B.y + ry }, eR = { x: R.x, y: R.y + ry };
+        shingle(eL, eB, apex, isBarn ? '#8f3f2a' : '#bd5c3a', true);
+        shingle(eB, eR, apex, isBarn ? '#b5533a' : '#e07a53', false);
+        x.strokeStyle = 'rgba(255,255,255,.16)'; x.lineWidth = 2.4 * z;
+        const rh = lerp(eB, apex, .12);
+        seg(rh.x, rh.y, apex.x, apex.y);
+        x.strokeStyle = isBarn ? '#8f3f2a' : '#bd5c3a'; x.lineWidth = 3 * z;
+        x.beginPath(); x.moveTo(eL.x, eL.y); x.lineTo(eB.x, eB.y); x.lineTo(eR.x, eR.y); x.stroke();
+        // труба (только дом; дым — динамика)
+        if (!isBarn) {
+            const chx = s.x - bw * .5, chy = s.y + ry - roofH * .5;
+            x.fillStyle = '#a85f42'; x.fillRect(chx - 6 * z, chy - 16 * z, 12 * z, 24 * z);
+            x.fillStyle = '#8a4a30'; x.fillRect(chx - 7.2 * z, chy - 19 * z, 14.4 * z, 5 * z);
+        }
+    }
+    function shingle(e0, e1, apex, base, left) {
+        quad(e0, e1, apex, e0, base);
+        x.save();
+        x.beginPath(); x.moveTo(e0.x, e0.y); x.lineTo(e1.x, e1.y); x.lineTo(apex.x, apex.y); x.closePath(); x.clip();
+        const rows = 5;
+        for (let r = 1; r <= rows; r++) {
+            const t = r / (rows + 1), a = lerp(e0, apex, t), b = lerp(e1, apex, t);
+            x.strokeStyle = left ? 'rgba(90,35,20,.45)' : 'rgba(120,50,30,.4)'; x.lineWidth = 1.5 * z;
+            seg(a.x, a.y, b.x, b.y);
+            for (let c1 = 0; c1 <= 6; c1++) {
+                const p = lerp(a, b, c1 / 6 + (r % 2 ? .5 / 6 : 0));
+                seg(p.x, p.y, p.x, p.y - 3.4 * z);
+            }
+        }
+        x.strokeStyle = left ? 'rgba(255,255,255,.12)' : 'rgba(255,255,255,.28)'; x.lineWidth = 4 * z;
+        const h0 = lerp(e0, apex, .06), h1 = lerp(e1, apex, .06);
+        seg(h0.x, h0.y, h1.x, h1.y);
+        x.restore();
+    }
+    put(BARN_G.gx + BARN_G.gy + 1, () => bldg(BARN_G, true));
+    put(HOUSE_G.gx + HOUSE_G.gy + 1, () => bldg(HOUSE_G, false));
+
+    // пруд 2×2 клетки: кромка по линиям сетки, вода с градиентом глубины
+    function pond() {
+        const s = G(POND_G.gx + .5, POND_G.gy + .5), w = 2 * TW, h = 2 * TH;
+        rhombus(s.x, s.y, w, h, '#b79a63');
+        rhombus(s.x, s.y, w * .93, h * .93, '#c9b071');
+        x.save(); rhombusPath(s.x, s.y, w * .84, h * .84); x.clip();
+        const g = x.createRadialGradient(s.x, s.y, 2, s.x, s.y, w * .84);
+        g.addColorStop(0, '#93e4f0'); g.addColorStop(.6, '#4fc0d6'); g.addColorStop(1, '#2f9fb8');
+        x.fillStyle = g; x.fillRect(s.x - w, s.y - h, w * 2, h * 2);
+        x.restore();
+        // кувшинки
+        x.fillStyle = '#4f9436';
+        for (const [ox, oy] of [[-.35, -.15], [.3, .25], [.02, -.38]]) {
+            x.beginPath(); x.ellipse(s.x + ox * w * .8, s.y + oy * h * .8, 7 * z, 4 * z, 0, .4, 6.6); x.fill();
+        }
+        // камешки по берегу
+        x.fillStyle = COL.pebble;
+        for (let i = 0; i < 8; i++) {
+            const a = i / 8 * Math.PI * 2 + rnd(i) * .5;
+            ell(s.x + Math.cos(a) * w * .95, s.y + Math.sin(a) * h * .95, 2.6 * z, 1.6 * z);
+        }
+    }
+    put(POND_G.gx + POND_G.gy + 1, () => pond());
+
+    // декор
+    function flower(f) {
+        const s = G(f.gx + rnd(f.gx * 3 + f.gy) * .5 - .25, f.gy + rnd(f.gy * 5 + f.gx) * .5 - .25), k = f.s * z;
+        x.strokeStyle = '#5aa03e'; x.lineWidth = 1.7 * z;
+        seg(s.x, s.y, s.x + 1.5 * k, s.y - 9 * k);
+        x.fillStyle = f.h;
+        for (let p = 0; p < 5; p++) {
+            const a = p / 5 * 6.28;
+            ell(s.x + 1.5 * k + Math.cos(a) * 3.2 * k, s.y - 9 * k + Math.sin(a) * 3.2 * k, 2.2 * k, 2.2 * k);
+        }
+        x.fillStyle = '#ffd95e'; ell(s.x + 1.5 * k, s.y - 9 * k, 1.9 * k, 1.9 * k);
+    }
+    function tuft(g) {
+        const s = G(g.gx + rnd(g.gx * 9 + g.gy) * .5 - .25, g.gy + rnd(g.gy * 7 + g.gx) * .5 - .25), k = g.s * z;
+        x.strokeStyle = '#7fa451'; x.lineWidth = 1.9 * z;
+        for (let i = -1; i <= 1; i++)
+            seg(s.x + i * 3 * k, s.y, s.x + i * 3 * k + rnd(g.gx + i) * 3 * k - 1.5 * k, s.y - 9 * k);
+    }
+    function stone(st) {
+        const s = G(st.gx, st.gy), k = st.s * z;
+        softShadow(s.x, s.y + 1.5 * k, 9 * k, 3.6 * k, .16);
+        x.fillStyle = COL.stoneLo; ell(s.x, s.y - 2.4 * k, 7 * k, 4.6 * k);
+        x.fillStyle = COL.stoneHi; ell(s.x - 1.2 * k, s.y - 4 * k, 3.6 * k, 2.3 * k);
+    }
+    for (const f of decor.flowers) put(f.gx + f.gy, () => flower(f));
+    for (const g of decor.grass) put(g.gx + g.gy, () => tuft(g));
+    for (const s of decor.stones) put(s.gx + s.gy, () => stone(s));
+
+    // стог сена в загоне (если есть животные)
+    if ((S.animals.hen + S.animals.cow + S.animals.sheep) > 0) {
+        put(9.4, () => {
+            const s = G(.2, 9);
+            softShadow(s.x, s.y + 3 * z, 26 * z, 9 * z, .18);
+            x.fillStyle = '#e2c878'; ell(s.x, s.y - 8 * z, 24 * z, 13 * z);
+            x.fillStyle = '#eed88f'; ell(s.x - 4 * z, s.y - 12 * z, 17 * z, 9 * z);
+            x.strokeStyle = '#d0b264'; x.lineWidth = 1.2 * z;
+            for (let i = 0; i < 6; i++) {
+                const a = rnd(i * 3) * 6.28;
+                seg(s.x + Math.cos(a) * 14 * z, s.y - 8 * z + Math.sin(a) * 7 * z,
+                    s.x + Math.cos(a) * 20 * z, s.y - 8 * z + Math.sin(a) * 10 * z);
+            }
+        });
+    }
+
+    items.sort((a, b) => a.d - b.d);
+    for (const it of items) it.fn();
 }
 
 // ---------- Эффекты ----------
@@ -62,14 +416,14 @@ let prestigeT = 0;
 function addFloat(p, txt, col) { floats.push({ p: p.copy(), txt, col, t: 1.2 }); }
 function fxHarvest(i, ci, golden) {
     const p = plotPos(i), c = CROPS[ci];
-    addFloat(p.add(vec2(0, .8)), golden ? '+5!' : '+1', golden ? '#e9b949' : '#fff');
+    addFloat(p.add(vec2(0, 1)), golden ? '+5!' : '+1', golden ? '#e9b949' : '#fff');
     for (let k = 0; k < (golden ? 10 : 5); k++)
-        pops.push({ p: p.add(vec2(0, .3)), v: vec2((Math.random() - .5) * 3, Math.random() * 3 + 1),
+        pops.push({ p: p.add(vec2(0, BED_DEP + .2)), v: vec2((Math.random() - .5) * 3, Math.random() * 3 + 1),
                     col: golden ? '#efd07a' : c.hue, t: .7, r: .09 + Math.random() * .08 });
 }
 function fxTap(i) {
     const p = plotPos(i);
-    pops.push({ p: p.add(vec2((Math.random() - .5) * .8, .4)), v: vec2(0, 1.6), col: '#c3dd9a', t: .5, r: .08 });
+    pops.push({ p: p.add(vec2((Math.random() - .5) * .8, BED_DEP + .2)), v: vec2(0, 1.6), col: '#c3dd9a', t: .5, r: .08 });
 }
 function fxTractor() { tractorT = 0; tractorRow = Math.floor(Math.random() * Math.max(1, S.plots.length) / 4) | 0; }
 function fxPrestige() {
@@ -79,18 +433,21 @@ function fxPrestige() {
                     col: ['#efd07a', '#eda3b4', '#a8cc80', '#c3a8dd'][k % 4], t: 1.5 + Math.random(), r: .1 + Math.random() * .1 });
 }
 
-// ---------- Мир ----------
+// ============================================================
+// Кадр: подложка → готовый мир (drawImage) → динамика
+// ============================================================
 function renderWorld() {
+    if (!worldCanvas || worldSig !== worldSigNow()) buildWorld();
+
     const tl = screenToWorld(vec2(0, 0)), br = screenToWorld(mainCanvasSize);
     const L = tl.x, Rt = br.x, T = tl.y, B = br.y;              // T>B (y вверх)
-    const midX = (L + Rt) / 2, midY = (T + B) / 2, w = Rt - L + 2, h = T - B + 2;
+    drawRect(vec2((L + Rt) / 2, (T + B) / 2), vec2(Rt - L + 2, T - B + 2), C('#9cc06a'));
 
-    // луг-подложка
-    drawRect(vec2(midX, midY), vec2(w, h), C('#9cc06a'));
-    drawGroundTiles(L, Rt, T, B);
-    drawPathCells();
+    // статичный мир — один drawImage
+    const a = worldToScreen(vec2(WX0, WY1)), b = worldToScreen(vec2(WX1, WY0));
+    mainContext.drawImage(worldCanvas, a.x, a.y, b.x - a.x, b.y - a.y);
 
-    // облака (фон, без сортировки)
+    // облака
     for (const c of decor.clouds) {
         c.x += c.v * timeDelta; if (c.x > Rt + 4) c.x = L - 4;
         const p = vec2(c.x, c.y);
@@ -98,33 +455,31 @@ function renderWorld() {
         drawEllipse(p.add(vec2(.8 * c.s, .18 * c.s)), vec2(1 * c.s, .45 * c.s), C('#ffffff'));
         drawEllipse(p.add(vec2(-.7 * c.s, .14 * c.s)), vec2(.9 * c.s, .4 * c.s), C('#fbfbf4'));
     }
+    // рябь на пруду
+    const pc = PONDC();
+    for (let i = 0; i < 4; i++) {
+        const ph = time * 1.4 + i * 1.3;
+        drawEllipse(pc.add(vec2(Math.sin(ph) * IW * 1.1, Math.cos(ph * .7) * IH * 1.1)),
+            vec2(.2, .07), new Color(1, 1, 1, .35 + .2 * Math.sin(ph * 2)));
+    }
+    // дым из трубы дома
+    const ch = chimneyPos();
+    for (let k = 0; k < 3; k++) {
+        const t = (time * .5 + k * .33) % 1;
+        drawCircle(ch.add(vec2(Math.sin(t * 6) * .2, t * 1.5)), .1 + t * .2, new Color(1, 1, 1, .4 * (1 - t)));
+    }
 
-    // ---- сборка списка с сортировкой по глубине ----
+    // ---- динамика с сортировкой по глубине ----
     const items = [];
     const push = (gx, gy, fn, bias = 0) => items.push({ d: gx + gy + bias, fn });
 
-    // зоны-участки (рисуем как фон каждой зоны — низкий приоритет)
-    for (let z = 0; z < ZONES.length; z++) {
-        if (z <= S.zones) { const zz = z; push(0, zoneCenterGrid(zz).gy, () => drawZoneRegion(zz), -6); }
+    for (let i = 0; i < S.plots.length; i++) {
+        const g = plotGrid(i);
+        if (S.plots[i].c >= 0) push(g.gx, g.gy, () => drawCrop(plotPos(i), S.plots[i]));
     }
-    // деревья (задний план)
-    for (const t of decor.trees) push(t.gx, t.gy, () => drawTree(isoWorld(t.gx, t.gy), t.s));
-    // постройки
-    push(HOUSE_G.gx, HOUSE_G.gy, () => drawHouseIso(isoWorld(HOUSE_G.gx, HOUSE_G.gy), false));
-    push(BARN_G.gx, BARN_G.gy, () => drawHouseIso(isoWorld(BARN_G.gx, BARN_G.gy), true));
-    push(POND_G.gx, POND_G.gy, () => drawPondIso(isoWorld(POND_G.gx, POND_G.gy)));
-    // декор на земле
-    for (const g of decor.grass) push(g.gx, g.gy, () => drawGrassTuft(isoWorld(g.gx, g.gy), g.s));
-    for (const s of decor.stones) push(s.gx, s.gy, () => drawStone(isoWorld(s.gx, s.gy), s.s));
-    for (const f of decor.flowers) push(f.gx, f.gy, () => drawFlower(isoWorld(f.gx, f.gy), f.s, f.h));
-    // грядки
-    for (let i = 0; i < S.plots.length; i++) { const g = plotGrid(i); push(g.gx, g.gy, () => { drawBedIso(plotPos(i)); if (S.plots[i].c >= 0) drawCrop(plotPos(i), S.plots[i]); }); }
-    // призрачная грядка «+»
     const owned = S.plots.length, maxNow = ZONES.slice(0, S.zones).reduce((s, z) => s + z.plots, 0);
     if (owned < maxNow) { const g = plotGrid(owned); push(g.gx, g.gy, () => drawGhostPlot(owned)); }
-    // табличка следующей зоны
     if (S.zones < ZONES.length) { const g = zoneCenterGrid(S.zones); push(g.gx, g.gy, () => drawZoneSign(S.zones), .5); }
-    // животные и работники
     pushAnimals(push);
     pushWorkers(push);
 
@@ -135,147 +490,7 @@ function renderWorld() {
     drawParticles();
 }
 
-let _GT = null;                                 // переиспользуемые вершины ромба (без аллокаций в цикле)
-function drawGroundTiles(L, Rt, T, B) {
-    if (!_GT) _GT = [vec2(0, IH), vec2(IW, 0), vec2(0, -IH), vec2(-IW, 0)];
-    const cA = C('#98bd66'), cB = C('#a1c66e');
-    // границы grid из углов вида, но не шире области фермы
-    const toG = (X, Y) => ({ gx: (X / IW - Y / IH) / 2, gy: (-Y / IH - X / IW) / 2 });
-    const cs = [toG(L, T), toG(Rt, T), toG(L, B), toG(Rt, B)];
-    let gxmin = 1e9, gxmax = -1e9, gymin = 1e9, gymax = -1e9;
-    for (const c of cs) { gxmin = Math.min(gxmin, c.gx); gxmax = Math.max(gxmax, c.gx); gymin = Math.min(gymin, c.gy); gymax = Math.max(gymax, c.gy); }
-    gxmin = Math.max(-10, Math.floor(gxmin) - 1); gxmax = Math.min(10, Math.ceil(gxmax) + 1);
-    gymin = Math.max(-8, Math.floor(gymin) - 1);  gymax = Math.min(14, Math.ceil(gymax) + 1);
-    for (let gx = gxmin; gx <= gxmax; gx++)
-        for (let gy = gymin; gy <= gymax; gy++)
-            drawPoly(_GT, (gx + gy) & 1 ? cA : cB, 0, undefined, isoWorld(gx, gy));
-}
-
-// ---------- Зоны, тропинки ----------
-function drawZoneRegion(z) {
-    const g = zoneCenterGrid(z);
-    const unlocked = z < S.zones;
-    // участок 4×2 плитки, чуть иной оттенок / блеклый для закрытой
-    for (let cx = -2; cx <= 1; cx++) for (let ry = -1; ry <= 0; ry++) {
-        const p = isoWorld(g.gx + cx + .5, g.gy + ry + .5);
-        isoTile(p, IW, IH, unlocked ? (z === 2 ? C('#b3d089') : C('#a9c97e')) : new Color(.55, .62, .42, .5));
-    }
-}
-function drawPathCells() {
-    // грунтовые тропинки-разделители между зонами, строго по клеткам
-    for (const [gx, gy] of PATH_CELLS) {
-        const p = isoWorld(gx, gy);
-        isoTile(p, IW * .98, IH * .98, C('#c9b083'));
-        isoTile(p, IW * .84, IH * .84, C('#d3bd93'));
-    }
-}
-
-// ---------- Постройки (изо-объём) ----------
-function drawHouseIso(pos, isBarn) {
-    const hw = IW * 1.25, hh = IH * 1.25, Hh = isBarn ? 2.2 : 1.9, roofH = isBarn ? 1.3 : 1.55;
-    const wall = isBarn ? '#cf6a4c' : '#f0dcb0', wallSide = isBarn ? '#b6573c' : '#dcc493';
-    // тень
-    drawEllipse(pos.add(vec2(0, -hh * .6)), vec2(hw * 1.3, hh * .8), SHADOW);
-    // угловые точки основания
-    const Lp = vec2(-hw, 0), Bt = vec2(0, -hh), Rp = vec2(hw, 0);
-    // стены (2 передние грани)
-    quad(pos, Lp, Bt, Bt.add(vec2(0, Hh)), Lp.add(vec2(0, Hh)), C(wallSide));
-    quad(pos, Bt, Rp, Rp.add(vec2(0, Hh)), Bt.add(vec2(0, Hh)), C(wall));
-    // швы досок
-    for (let k = 1; k < 4; k++) {
-        const a = L2(Lp, Bt, k / 4), b = L2(Bt, Rp, k / 4);
-        drawLine(pos.add(a), pos.add(a.add(vec2(0, Hh))), .03, new Color(0, 0, 0, .08));
-        drawLine(pos.add(b), pos.add(b.add(vec2(0, Hh))), .03, new Color(0, 0, 0, .08));
-    }
-    // дверь/окно на правой грани (между Bt' и Rp')
-    const bt2 = Bt.add(vec2(0, Hh)), rp2 = Rp.add(vec2(0, Hh));
-    if (isBarn) {
-        const d0 = L2(Bt, Rp, .28), d1 = L2(Bt, Rp, .74);
-        quad(pos, d0, d1, L2(bt2, rp2, .74).add(vec2(0, -Hh * .18)), L2(bt2, rp2, .28).add(vec2(0, -Hh * .18)), C('#7e3826'));
-        drawLine(pos.add(d0), pos.add(L2(bt2, rp2, .74).add(vec2(0, -Hh * .18))), .05, C('#f0dcb0'));
-        drawLine(pos.add(d1), pos.add(L2(bt2, rp2, .28).add(vec2(0, -Hh * .18))), .05, C('#f0dcb0'));
-    } else {
-        const d0 = L2(Bt, Rp, .2), d1 = L2(Bt, Rp, .42);
-        quad(pos, d0, d1, d1.add(vec2(0, Hh * .62)), d0.add(vec2(0, Hh * .62)), C('#9c7139'));
-        drawCircle(pos.add(d1.add(vec2(-.06, Hh * .32))), .05, C('#ffd95e'));
-        const w0 = L2(Bt, Rp, .58), w1 = L2(Bt, Rp, .8);
-        quad(pos, w0.add(vec2(0, Hh * .34)), w1.add(vec2(0, Hh * .34)), w1.add(vec2(0, Hh * .66)), w0.add(vec2(0, Hh * .66)), C('#bfe4ec'));
-        drawLine(pos.add(L2(w0, w1, .5).add(vec2(0, Hh * .34))), pos.add(L2(w0, w1, .5).add(vec2(0, Hh * .66))), .03, C('#f0dcb0'));
-    }
-    // крыша: 2 передних ската + свес
-    const apex = vec2(0, Hh + roofH);
-    const Lp2 = Lp.add(vec2(0, Hh)), eaveL = Lp2.add(vec2(-hw * .12, hh * .06)), eaveBt = bt2.add(vec2(0, -hh * .12));
-    drawPoly([eaveL, eaveBt, apex], C(isBarn ? '#a84e34' : '#c05f3d'), 0, undefined, pos);
-    drawPoly([eaveBt, rp2.add(vec2(hw * .12, hh * .06)), apex], C(isBarn ? '#cf6a4c' : '#e07a53'), 0, undefined, pos);
-    drawLine(pos.add(eaveBt), pos.add(apex), .04, new Color(1, 1, 1, .35));
-    // труба + дым (дом)
-    if (!isBarn) {
-        const ch = vec2(-hw * .4, Hh + roofH * .5);
-        drawRect(pos.add(ch), vec2(.22, .5), C('#a85f42'));
-        for (let k = 0; k < 3; k++) { const t = (time * .5 + k * .33) % 1;
-            drawCircle(pos.add(ch.add(vec2(Math.sin(t * 6) * .2, .3 + t * 1.4))), (.08 + t * .18), new Color(1, 1, 1, .4 * (1 - t))); }
-    }
-}
-
-function drawPondIso(pos) {
-    const hw = IW * 1.6, hh = IH * 1.6;
-    isoTile(pos, hw * 1.12, hh * 1.12, C('#c9b071'));
-    isoTile(pos, hw, hh, C('#54bcd0'));
-    isoTile(pos, hw * .62, hh * .62, C('#7fd6e6'));
-    for (let i = 0; i < 4; i++) { const ph = time * 1.4 + i * 1.3;
-        drawEllipse(pos.add(vec2(Math.sin(ph) * hw * .4, Math.cos(ph * .7) * hh * .4)), vec2(.18, .07), new Color(1, 1, 1, .4)); }
-    for (const [ox, oy] of [[-.4, .1], [.35, -.15]])
-        drawEllipse(pos.add(vec2(ox * hw, oy * hh)), vec2(.24, .12), C('#5aa03e'));
-}
-
-function drawTree(p, s) {
-    drawEllipse(p.add(vec2(.1 * s, -.28 * s)), vec2(.5 * s, .18 * s), SHADOW);
-    drawRect(p.add(vec2(0, .3 * s)), vec2(.16 * s, .6 * s), C('#9a7a58'));
-    drawCircle(p.add(vec2(0, .95 * s)), .95 * s, C('#6f9c5c'));
-    drawCircle(p.add(vec2(-.24 * s, 1.12 * s)), .58 * s, C('#7fac68'));
-    drawCircle(p.add(vec2(.26 * s, .86 * s)), .54 * s, C('#679455'));
-    drawCircle(p.add(vec2(-.12 * s, 1.28 * s)), .32 * s, C('#8fbc76'));
-}
-function drawGrassTuft(p, s) {
-    const sway = Math.sin(time * 1.4 + p.x * 2) * .04;
-    drawLine(p, p.add(vec2(-.06 + sway, s)), .045, C('#8aad5c'));
-    drawLine(p, p.add(vec2(.07 + sway, s * .82)), .045, C('#96b869'));
-    drawLine(p, p.add(vec2(sway, s * 1.05)), .04, C('#7fa451'));
-}
-function drawStone(p, s) {
-    drawEllipse(p.add(vec2(0, -.02)), vec2(s * 1.2, s * .7), SHADOW);
-    drawEllipse(p, vec2(s * 1.15, s * .72), C('#a8a795'));
-    drawEllipse(p.add(vec2(-.03, s * .16)), vec2(s * .8, s * .48), C('#bcbaa8'));
-}
-function drawFlower(p, s, h) {
-    drawLine(p, p.add(vec2(0, .18)), .04, C('#8aab68'));
-    const c = p.add(vec2(0, .24));
-    for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2 + p.x;
-        drawCircle(c.add(vec2(Math.cos(a), Math.sin(a)).scale(s * .9)), s * 1.15, C(h)); }
-    drawCircle(c, s * .9, C('#f2d98a'));
-}
-
-// ---------- Грядки ----------
-function drawBedIso(pos) {
-    // короб чуть меньше клетки — по краям видна трава (грядки строго на квадратах)
-    const hw = IW * .88, hh = IH * .88, dep = .4;
-    drawEllipse(pos.add(vec2(0, -hh * .55)), vec2(hw * 1.05, hh * .55), SHADOW);
-    const Lp = vec2(-hw, 0), Bt = vec2(0, -hh), Rp = vec2(hw, 0);
-    // боковые доски короба
-    quad(pos, Lp, Bt, Bt.add(vec2(0, -dep)), Lp.add(vec2(0, -dep)), C('#9c7139'));
-    quad(pos, Bt, Rp, Rp.add(vec2(0, -dep)), Bt.add(vec2(0, -dep)), C('#c99a5f'));
-    // верхняя рамка
-    isoTile(pos, hw, hh, C('#dbb884'));
-    // земля
-    const iw = hw * .76, ih = hh * .76;
-    isoTile(pos, iw, ih, C('#7a5334'));
-    // борозды (вдоль оси +gx)
-    const ed = vec2(hw, -hh).scale(.5), pv = vec2(hw, hh);
-    for (let k = -1; k <= 1; k++) {
-        const off = pv.scale(k * .22);
-        drawLine(pos.add(off.subtract(ed.scale(.6))), pos.add(off.add(ed.scale(.6))), .05, C('#5f3f26'));
-    }
-}
+// ---------- Грядки: динамика (культуры) ----------
 function drawGhostPlot(idx) {
     const pos = plotPos(idx), cost = plotCost(idx - 1), can = S.coins >= cost;
     isoTile(pos, IW, IH, new Color(.95, .9, .78, .18));
@@ -287,28 +502,36 @@ function drawGhostPlot(idx) {
 function drawCrop(pos, p) {
     const c = CROPS[p.c], gt = cropGrow(c), k = Math.min(1, p.t / gt), ready = k >= 1;
     const bob = ready ? Math.sin(time * 3 + pos.x) * .05 : 0;
-    const o = pos.add(vec2(0, IH * .1 + bob));
-    if (k < .3) {
-        const s = .3 + k;
-        drawLine(o, o.add(vec2(0, .32 * s)), .05, C('#6da057'));
-        drawEllipse(o.add(vec2(-.1, .32 * s)), vec2(.13 * s, .08 * s), C('#8fbf68'));
-        drawEllipse(o.add(vec2(.1, .32 * s)), vec2(.13 * s, .08 * s), C('#9cc973'));
-    } else drawCropArt(o, p.c, .45 + .55 * k);
+    const o = pos.add(vec2(0, BED_DEP + bob));      // растение на ВЕРХУ короба
+    if (k < .35) drawSprout(o, k);
+    else drawCropArt(o, p.c, .45 + .55 * k);
     if (p.g && k > .3) {
         const tw = .5 + Math.sin(time * 5 + pos.x * 2) * .5;
         drawStar(o.add(vec2(.66, .7)), .1 + .05 * tw);
         drawStar(o.add(vec2(-.7, .46)), .08 + .04 * (1 - tw));
     }
     if (!ready) {
-        const by = pos.add(vec2(0, -IH - .18));
+        const by = pos.add(vec2(0, -IH - .16));
         drawRect(by, vec2(1.4, .16), new Color(1, 1, 1, .4));
         drawRect(by, vec2(1.32, .1), new Color(.4, .34, .24, .25));
         drawRect(by.add(vec2(-(1.32 - 1.32 * k) / 2, 0)), vec2(1.32 * k, .1), C('#8fc167'));
     } else {
-        const t = 1 + Math.sin(time * 4) * .08, bp = pos.add(vec2(.85, .78));
+        const t = 1 + Math.sin(time * 4) * .08, bp = pos.add(vec2(.85, .95));
         drawCircle(bp, .4 * t, C('#fffdf4'));
         drawText('!', bp.add(vec2(0, .02)), .38 * t, C('#e0a83e'));
     }
+}
+// росток: изогнутый стебель + листья-овалы (не «палочка»)
+function drawSprout(o, k) {
+    const s = .5 + k * 2, sway = Math.sin(time * 2 + o.x * 2) * .05;
+    drawLine(o, o.add(vec2(sway, .36 * s)), .05, C('#4f9436'));
+    const n = 2 + Math.round(k * 8);
+    for (let i = 0; i < n; i++) {
+        const t = .3 + i / n * .7, side = i % 2 ? 1 : -1;
+        drawEllipse(o.add(vec2(sway * t + side * .11 * s, .36 * s * t)),
+            vec2(.13 * s, .06 * s), C(i % 2 ? '#6fb84a' : '#5ea63c'), side * .5);
+    }
+    drawEllipse(o.add(vec2(sway + .04, .34 * s)), vec2(.05 * s, .025 * s), new Color(1, 1, 1, .25));
 }
 function drawStar(p, r) {
     for (let k = 0; k < 4; k++)
@@ -404,7 +627,7 @@ function drawCropArt(o, ci, s) {
     }
 }
 
-// ---------- Животные (чиби) ----------
+// ---------- Животные (детализированные чиби) ----------
 const animEnts = [];
 function syncAnimals() {
     const want = [];
@@ -418,66 +641,93 @@ function syncAnimals() {
 }
 function pushAnimals(push) {
     syncAnimals();
-    // загон (front-left)
-    if (animEnts.length) push(0, 9.5, drawPaddockFence, -.2);
+    if (animEnts.length) pushFence(push);
     for (const a of animEnts) {
         a.gx += a.dir * a.v * timeDelta * .5;
-        if (a.gx > 3.2) a.dir = -1; if (a.gx < -.2) a.dir = 1;
+        if (a.gx > 3.1) a.dir = -1; if (a.gx < -.1) a.dir = 1;
         push(a.gx, a.gy, () => {
-            const bob = Math.abs(Math.sin(time * 4 + a.ph)) * .06;
-            const p = isoWorld(a.gx, a.gy).add(vec2(0, .06 + bob));
-            drawEllipse(isoWorld(a.gx, a.gy).add(vec2(0, -.04)), vec2(.5, .16), SHADOW);
+            const gp = isoWorld(a.gx, a.gy);
+            const bob = Math.abs(Math.sin(time * 4 + a.ph)) * .05;
+            drawEllipse(gp.add(vec2(0, -.02)), vec2(a.id === 'hen' ? .34 : .55, .15), SHADOW);
+            const p = gp.add(vec2(0, bob));
             if (a.id === 'hen') drawHen(p, a.dir); else if (a.id === 'cow') drawCow(p, a.dir); else drawSheep(p, a.dir);
         });
     }
 }
-function drawPaddockFence() {
-    // лёгкий штакетник по фронтальной грани загона
-    for (let gx = -.2; gx <= 3.4; gx += .6) {
-        const p = isoWorld(gx, 10.6);
-        drawRect(p.add(vec2(0, .28)), vec2(.1, .5), C('#efe4cb'));
+// штакетник по фронтальным граням загона (динамика — чтобы животные
+// правильно прятались за забором при сортировке)
+const _fencePts = (() => {
+    const pts = [];
+    for (let k = 0; k <= 8; k++) pts.push([-.5 + k * .5, 10.5]);
+    for (let k = 1; k <= 4; k++) pts.push([3.5, 10.5 - k * .5]);
+    return pts;
+})();
+function pushFence(push) {
+    for (let i = 0; i < _fencePts.length; i++) {
+        const [gx, gy] = _fencePts[i];
+        const p = isoWorld(gx, gy);
+        const prev = i ? isoWorld(_fencePts[i - 1][0], _fencePts[i - 1][1]) : null;
+        push(gx, gy, () => {
+            if (prev) {
+                drawLine(prev.add(vec2(0, .16)), p.add(vec2(0, .16)), .05, C('#e7d9b8'));
+                drawLine(prev.add(vec2(0, .36)), p.add(vec2(0, .36)), .05, C('#e7d9b8'));
+            }
+            drawRect(p.add(vec2(0, .26)), vec2(.09, .52), C('#efe4cb'));
+            drawRect(p.add(vec2(0, .04)), vec2(.09, .08), C('#cdbb96'));
+            drawCircle(p.add(vec2(0, .54)), .05, C('#efe4cb'));
+        }, .25);
     }
-    drawEllipse(isoWorld(.2, 9), vec2(.5, .26), C('#e2c878'));
-    drawEllipse(isoWorld(.2, 9).add(vec2(-.08, .1)), vec2(.34, .18), C('#eed88f'));
 }
 function drawHen(p, dir) {
-    drawEllipse(p.add(vec2(0, .2)), vec2(.36, .3), C('#f7ecd4'));
-    drawEllipse(p.add(vec2(-.12 * dir, .16)), vec2(.2, .16), C('#eddfc0'));
-    drawCircle(p.add(vec2(.16 * dir, .4)), .26, C('#f7ecd4'));
-    drawCircle(p.add(vec2(.13 * dir, .55)), .07, C('#e26a5a'));
-    drawCircle(p.add(vec2(.2 * dir, .57)), .06, C('#e26a5a'));
-    drawPoly([vec2(0, -.04), vec2(.15 * dir, .02), vec2(0, .07)], C('#eb9c4a'), 0, undefined, p.add(vec2(.36 * dir, .38)));
-    drawCircle(p.add(vec2(.24 * dir, .44)), .035, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.17 * dir, .36)), .05, new Color(.95, .66, .6, .55));
-    drawRect(p.add(vec2(-.05, -.03)), vec2(.04, .1), C('#eb9c4a'));
-    drawRect(p.add(vec2(.08, -.03)), vec2(.04, .1), C('#eb9c4a'));
+    drawLine(p.add(vec2(-.07, 0)), p.add(vec2(-.07, .14)), .035, C('#eda63f'));
+    drawLine(p.add(vec2(.08, 0)), p.add(vec2(.08, .14)), .035, C('#eda63f'));
+    drawEllipse(p.add(vec2(-.3 * dir, .42)), vec2(.16, .09), C('#e6dcc6'), dir * .7);
+    drawEllipse(p.add(vec2(-.34 * dir, .34)), vec2(.14, .08), C('#d3c8ad'), dir * .3);
+    drawEllipse(p.add(vec2(0, .3)), vec2(.34, .28), C('#f6efdf'));
+    drawEllipse(p.add(vec2(-.06 * dir, .28)), vec2(.19, .13), C('#e6dcc6'), -dir * .2);
+    drawEllipse(p.add(vec2(-.08 * dir, .25)), vec2(.13, .08), C('#d3c8ad'), -dir * .2);
+    drawCircle(p.add(vec2(.2 * dir, .52)), .17, C('#f6efdf'));
+    for (let i = 0; i < 3; i++) drawCircle(p.add(vec2((.13 + i * .06) * dir, .68 - Math.abs(i - 1) * .015)), .05, C('#e2725a'));
+    drawCircle(p.add(vec2(.24 * dir, .38)), .045, C('#e2725a'));
+    drawPoly([vec2(0, .035), vec2(.13 * dir, 0), vec2(0, -.035)], C('#eda63f'), 0, undefined, p.add(vec2(.34 * dir, .5)));
+    drawCircle(p.add(vec2(.24 * dir, .55)), .035, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.25 * dir, .565)), .013, C('#ffffff'));
+    drawCircle(p.add(vec2(.17 * dir, .46)), .04, new Color(.95, .66, .6, .5));
 }
 function drawCow(p, dir) {
-    drawEllipse(p.add(vec2(0, .26)), vec2(.62, .42), C('#f7f2e4'));
-    drawEllipse(p.add(vec2(-.16, .34)), vec2(.22, .15), C('#c9b8a4'));
-    drawEllipse(p.add(vec2(.18, .14)), vec2(.16, .11), C('#c9b8a4'));
-    drawCircle(p.add(vec2(.5 * dir, .48)), .3, C('#f7f2e4'));
-    drawEllipse(p.add(vec2(.56 * dir, .38)), vec2(.17, .11), C('#f2c4b4'));
-    drawCircle(p.add(vec2(.48 * dir, .72)), .07, C('#e0d2ba'));
-    drawCircle(p.add(vec2(.66 * dir, .68)), .07, C('#e0d2ba'));
-    drawEllipse(p.add(vec2(.3 * dir, .6)), vec2(.1, .06), C('#e8dcc4'));
-    drawCircle(p.add(vec2(.44 * dir, .52)), .04, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.6 * dir, .52)), .04, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.34 * dir, .44)), .05, new Color(.95, .66, .6, .5));
-    drawRect(p.add(vec2(-.3, -.02)), vec2(.14, .16), C('#e8dcc4'));
-    drawRect(p.add(vec2(.3, -.02)), vec2(.14, .16), C('#e8dcc4'));
+    for (const ox of [-.3, -.12, .14, .32]) {
+        drawRect(p.add(vec2(ox, .14)), vec2(.09, .26), C('#e3d8c2'));
+        drawRect(p.add(vec2(ox, .03)), vec2(.1, .07), C('#4a3b2e'));
+    }
+    drawLine(p.add(vec2(-.5 * dir, .52)), p.add(vec2(-.62 * dir, .18)), .035, C('#e3d8c2'));
+    drawCircle(p.add(vec2(-.62 * dir, .15)), .05, C('#4a3b2e'));
+    drawEllipse(p.add(vec2(0, .47)), vec2(.56, .38), C('#f5f0e4'));
+    drawEllipse(p.add(vec2(-.2, .52)), vec2(.19, .14), C('#c9b89a'), .3);
+    drawEllipse(p.add(vec2(.14, .36)), vec2(.15, .11), C('#c9b89a'), -.2);
+    drawEllipse(p.add(vec2(.46 * dir, .62)), vec2(.26, .22), C('#f5f0e4'));
+    drawEllipse(p.add(vec2(.3 * dir, .8)), vec2(.1, .06), C('#e3d8c2'), -.6 * dir);
+    drawEllipse(p.add(vec2(.62 * dir, .78)), vec2(.1, .06), C('#e3d8c2'), .6 * dir);
+    drawLine(p.add(vec2(.36 * dir, .82)), p.add(vec2(.33 * dir, .92)), .045, C('#d9c9a8'));
+    drawLine(p.add(vec2(.55 * dir, .82)), p.add(vec2(.58 * dir, .92)), .045, C('#d9c9a8'));
+    drawEllipse(p.add(vec2(.56 * dir, .52)), vec2(.18, .13), C('#f3c1b4'));
+    drawCircle(p.add(vec2(.5 * dir, .52)), .028, C('#d59685'));
+    drawCircle(p.add(vec2(.62 * dir, .52)), .028, C('#d59685'));
+    drawCircle(p.add(vec2(.36 * dir, .68)), .04, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.52 * dir, .68)), .04, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.375 * dir, .69)), .014, C('#ffffff'));
 }
 function drawSheep(p, dir) {
-    for (const [x, y, r] of [[0, .24, .42], [-.3, .3, .3], [.3, .3, .3], [-.16, .44, .28], [.16, .44, .28]])
+    for (const ox of [-.2, .2]) drawRect(p.add(vec2(ox, .1)), vec2(.09, .2), C('#c9b8a4'));
+    for (const [x, y, r] of [[0, .38, .34], [-.26, .42, .24], [.26, .42, .24], [-.14, .55, .22], [.14, .55, .22]])
         drawCircle(p.add(vec2(x, y)), r * 1.15, C('#f2ecdd'));
-    drawCircle(p.add(vec2(0, .3)), .4, C('#faf6ea'));
-    drawCircle(p.add(vec2(.4 * dir, .34)), .2, C('#d9c2ad'));
-    drawCircle(p.add(vec2(.34 * dir, .5)), .12, C('#f2ecdd'));
-    drawCircle(p.add(vec2(.38 * dir, .38)), .035, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.47 * dir, .38)), .035, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.42 * dir, .28)), .045, new Color(.95, .66, .6, .5));
-    drawRect(p.add(vec2(-.2, -.02)), vec2(.1, .14), C('#c9b8a4'));
-    drawRect(p.add(vec2(.2, -.02)), vec2(.1, .14), C('#c9b8a4'));
+    drawCircle(p.add(vec2(0, .44)), .34, C('#faf6ea'));
+    drawCircle(p.add(vec2(.38 * dir, .48)), .19, C('#d9c2ad'));
+    drawEllipse(p.add(vec2(.26 * dir, .58)), vec2(.09, .05), C('#c8ad94'), -.5 * dir);
+    drawCircle(p.add(vec2(.32 * dir, .64)), .11, C('#f2ecdd'));
+    drawCircle(p.add(vec2(.36 * dir, .52)), .035, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.45 * dir, .52)), .035, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.37 * dir, .53)), .012, C('#ffffff'));
+    drawCircle(p.add(vec2(.4 * dir, .42)), .045, new Color(.95, .66, .6, .5));
 }
 
 // ---------- Работники ----------
@@ -503,18 +753,20 @@ function drawWorker(e, id) {
     const p = e.p.add(vec2(0, bob));
     const shirt = id === 'harv' ? '#e29070' : '#7fa3c9';
     drawEllipse(e.p.add(vec2(0, -.04)), vec2(.32, .1), SHADOW);
-    drawEllipse(p.add(vec2(0, .26)), vec2(.28, .32), D(shirt, .85));
-    drawEllipse(p.add(vec2(-.02, .28)), vec2(.25, .3), C(shirt));
-    drawCircle(p.add(vec2(0, .76)), .3, C('#f6d7b2'));
-    drawCircle(p.add(vec2(-.09, .78)), .032, C('#4a3b2e'));
-    drawCircle(p.add(vec2(.09, .78)), .032, C('#4a3b2e'));
-    drawCircle(p.add(vec2(-.16, .7)), .05, new Color(.95, .66, .6, .55));
-    drawCircle(p.add(vec2(.16, .7)), .05, new Color(.95, .66, .6, .55));
-    drawEllipse(p.add(vec2(0, .94)), vec2(.36, .11), C('#e2c878'));
-    drawEllipse(p.add(vec2(0, 1)), vec2(.2, .13), C('#eed88f'));
-    drawEllipse(p.add(vec2(0, .94)), vec2(.36, .04), C('#d0b264'));
-    if (id === 'harv') { drawEllipse(p.add(vec2(.32, .24)), vec2(.16, .11), C('#c9a578')); drawEllipse(p.add(vec2(.32, .29)), vec2(.13, .06), C('#8a6749')); }
-    else { drawEllipse(p.add(vec2(-.3, .24)), vec2(.13, .17), C('#d9c8a8')); drawEllipse(p.add(vec2(-.3, .33)), vec2(.09, .05), C('#b8a37c')); }
+    drawRect(p.add(vec2(-.08, .05)), vec2(.09, .16), C('#7a5f4a'));
+    drawRect(p.add(vec2(.08, .05)), vec2(.09, .16), C('#7a5f4a'));
+    drawEllipse(p.add(vec2(0, .3)), vec2(.28, .3), D(shirt, .85));
+    drawEllipse(p.add(vec2(-.02, .32)), vec2(.25, .28), C(shirt));
+    drawCircle(p.add(vec2(0, .78)), .3, C('#f6d7b2'));
+    drawCircle(p.add(vec2(-.09, .8)), .032, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.09, .8)), .032, C('#4a3b2e'));
+    drawCircle(p.add(vec2(-.16, .72)), .05, new Color(.95, .66, .6, .55));
+    drawCircle(p.add(vec2(.16, .72)), .05, new Color(.95, .66, .6, .55));
+    drawEllipse(p.add(vec2(0, .96)), vec2(.36, .11), C('#e2c878'));
+    drawEllipse(p.add(vec2(0, 1.02)), vec2(.2, .13), C('#eed88f'));
+    drawEllipse(p.add(vec2(0, .96)), vec2(.36, .04), C('#d0b264'));
+    if (id === 'harv') { drawEllipse(p.add(vec2(.32, .26)), vec2(.16, .11), C('#c9a578')); drawEllipse(p.add(vec2(.32, .31)), vec2(.13, .06), C('#8a6749')); }
+    else { drawEllipse(p.add(vec2(-.3, .26)), vec2(.13, .17), C('#d9c8a8')); drawEllipse(p.add(vec2(-.3, .35)), vec2(.09, .05), C('#b8a37c')); }
 }
 function drawTractor() {
     if (!S.workers.tract || tractorT < 0 || tractorT > 3) return;
