@@ -667,8 +667,21 @@ function blob(o, dx, dy, rx, ry, base) {
     drawEllipse(o.add(vec2(dx - rx * .08, dy + ry * .12)), vec2(rx * .88, ry * .85), C(base));
     drawEllipse(o.add(vec2(dx - rx * .3, dy + ry * .4)), vec2(rx * .24, ry * .16), new Color(1, 1, 1, .35));
 }
+// спрайты некоторых культур (готовые PNG). Пока картинка не загрузилась — рисуем вектор.
+const CROP_IMG = {};
+for (const id of ['pumpkin', 'cabbage', 'melon', 'cuke']) { const im = new Image(); im.src = 'art/' + id + '.png'; CROP_IMG[id] = im; }
+const cropImgReady = img => img && img.complete && img.naturalWidth > 0;
+function drawCropImg(o, img, s) {
+    const hW = 1.25 * s;                                          // высота спрайта, world-единицы
+    const b = worldToScreen(o), up = worldToScreen(o.add(vec2(0, hW)));
+    const h = b.y - up.y, w = h * (img.naturalWidth / img.naturalHeight);
+    mainContext.imageSmoothingEnabled = true;
+    mainContext.drawImage(img, b.x - w / 2, up.y, w, h);         // низ спрайта — в основании растения
+}
 function drawCropArt(o, ci, s) {
     const c = CROPS[ci], top = C(c.top), body = C(c.hue);
+    const spr = CROP_IMG[c.id];
+    if (cropImgReady(spr)) { drawCropImg(o, spr, s); return; }   // есть картинка — рисуем её
     const wind = Math.sin(time * 1.5 + o.x * 2.2);   // лёгкий ветер — только для ботвы/стеблей
     switch (c.id) {
     case 'wheat': {                                  // высокие колосья качаются целиком
