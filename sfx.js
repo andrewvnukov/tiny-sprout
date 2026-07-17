@@ -22,7 +22,7 @@ const SFX = {
 // Раздельная громкость: ползунок 0..1, 0.5 = базовая. Эффекты масштабируем
 // прямо в вызове zzfx (мастер-гейн держим на 1), музыка — своим gain-узлом.
 const sfxGain = v => Math.max(0, .6 * (v || 0));    // .5 -> .3 (как было), 1 -> .6, 0 -> тишина
-const musGain = v => Math.max(0, 1.2 * (v || 0));   // .5 -> .6 (как было), 1 -> 1.2, 0 -> тишина
+const musGain = v => Math.max(0, 2.8 * (v || 0));   // громче: .5 -> 1.4, 1 -> 2.8, 0 -> тишина
 function sfx(name) {
     if (!S || (S.sfxVol || 0) <= 0) return;
     try { const a = SFX[name].slice(); a[0] *= sfxGain(S.sfxVol); zzfx(...a); } catch(e) {}
@@ -79,6 +79,16 @@ function startMusic() {
 function stopMusic() {
     if (musicSource) { try { musicSource.stop(); } catch(e) {} musicSource = null; }
     musicOn = false;
+}
+// приложение ушло в фон — глушим музыку и весь звук, чтобы не играл «за спиной»
+function audioSuspend() {
+    stopMusic();
+    try { if (typeof audioContext !== 'undefined' && audioContext && audioContext.state === 'running') audioContext.suspend(); } catch(e) {}
+}
+// вернулись — оживляем контекст и (если музыка включена) запускаем заново
+function audioResume() {
+    try { if (typeof audioContext !== 'undefined' && audioContext) audioContext.resume(); } catch(e) {}
+    startMusic();
 }
 // живое изменение громкости музыки (без перезапуска); на краях — старт/стоп
 function setMusicVolume() {

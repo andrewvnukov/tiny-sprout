@@ -6,6 +6,8 @@
 // ---------- Глобальное состояние ----------
 let S = null;
 let ysdk = null;
+const LB_NAME = 'goldenSeeds';         // техническое имя лидерборда в консоли Яндекс Игр
+let lbBoard = null, _lbLast = -1;
 let earnAcc = 0, ipsTimer = 0;
 let harvT = 0, sowT = 0, tractT = 0;   // таймеры работников (не сохраняются)
 let saveT = 0;
@@ -57,6 +59,7 @@ function persist(force) {
     if (ysdk) {
         try { ysdk.getPlayer().then(p => p.setData({ save: raw })).catch(()=>{}); } catch(e) {}
     }
+    submitScore();   // обновить очки в лидерборде, если изменились
 }
 function restore(raw) {
     const f = freshState();
@@ -76,6 +79,29 @@ function restore(raw) {
         if (!f.plots.length) f.plots = [{ c:-1, t:0, g:false }];
         return f;
     } catch(e) { return f; }
+}
+
+// ---------- Лидерборд (Яндекс Игры): сумма золотых семян ----------
+function initLeaderboard() {
+    if (!ysdk) return;
+    try {
+        const g = ysdk.getLeaderboards ? ysdk.getLeaderboards() : ysdk.leaderboards;
+        Promise.resolve(g).then(lb => { lbBoard = lb; submitScore(true); }).catch(() => {});
+    } catch(e) {}
+}
+function submitScore(force) {
+    if (!lbBoard || !S) return;
+    const sc = S.seeds | 0;
+    if (!force && sc === _lbLast) return;
+    _lbLast = sc;
+    try { const r = lbBoard.setLeaderboardScore(LB_NAME, sc); r && r.catch && r.catch(() => {}); } catch(e) {}
+}
+function fetchLeaderboard(cb) {
+    if (!lbBoard) { cb(null); return; }
+    try {
+        lbBoard.getLeaderboardEntries(LB_NAME, { includeUser: true, quantityAround: 6, quantityTop: 12 })
+            .then(res => cb(res)).catch(() => cb(null));
+    } catch(e) { cb(null); }
 }
 
 // ---------- Экономика ----------
@@ -688,6 +714,7 @@ function boot(raw) {
                 done = true;
                 boot(d && d.save ? d.save : localRaw);
                 try { ysdk.features.LoadingAPI && ysdk.features.LoadingAPI.ready(); } catch(e) {}
+                initLeaderboard();
             });
         }).catch(fallback);
     } else fallback();

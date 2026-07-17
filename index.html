@@ -211,6 +211,10 @@ button { font-family:inherit; color:var(--ink); }
 .sndRow input[type=range]::-moz-range-thumb { width:24px; height:24px; border-radius:50%; background:var(--green);
     border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
 
+/* ---------- строки лидерборда ---------- */
+.lbRank { flex:0 0 30px; text-align:center; font-weight:800; font-size:15px; color:var(--ink-soft); }
+.lbAva { width:38px; height:38px; border-radius:50%; object-fit:cover; flex-shrink:0; background:var(--cream); }
+
 /* ---------- подсказка HUD ---------- */
 .hudtip { position:fixed; z-index:60; max-width:210px; background:rgba(75,60,44,.95); color:#fdf8ec;
     padding:9px 12px; border-radius:14px; font-size:12.5px; line-height:1.35; box-shadow:0 4px 14px rgba(50,38,26,.35);
@@ -294,6 +298,7 @@ button { font-family:inherit; color:var(--ink); }
     <div class="tabs">
         <button class="tab on" data-tab="coll">Коллекция</button>
         <button class="tab" data-tab="ach">Достижения</button>
+        <button class="tab" data-tab="rank">Рейтинг</button>
     </div>
     <div class="list" id="albumList"></div>
 </div>

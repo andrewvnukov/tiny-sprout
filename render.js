@@ -704,11 +704,23 @@ function drawCropArt(o, ci, s) {
         drawEllipse(o.add(vec2(.02, .34 * s)), vec2(.28 * s, .24 * s), D(c.top, 1.05));
         drawEllipse(o.add(vec2(-.04, .44 * s)), vec2(.18 * s, .14 * s), new Color(1, 1, 1, .22));
         break;
-    case 'tomato': {                                 // куст качается туда-сюда
-        const sw = wind * .07;
-        drawEllipse(o.add(vec2(sw, .42 * s)), vec2(.48 * s, .48 * s), C('#6faf5a'));
-        drawEllipse(o.add(vec2(-.2 + sw, .58 * s)), vec2(.2 * s, .2 * s), C('#7fbf68'));
-        blob(o, -.24 + sw * .6, .3 * s, .17 * s, .16 * s, c.hue); blob(o, .26 + sw, .46 * s, .17 * s, .16 * s, c.hue); blob(o, .05 + sw * .3, .18 * s, .16 * s, .15 * s, c.hue);
+    case 'tomato': {                                 // куст с гроздью помидоров — качается
+        const sw = wind * .06;
+        // листва: несколько перекрывающихся эллипсов = объёмный куст (не отдельный кружок)
+        drawEllipse(o.add(vec2(sw, .34 * s)), vec2(.5 * s, .4 * s), C('#4f9444'));
+        drawEllipse(o.add(vec2(-.26 + sw, .5 * s)), vec2(.24 * s, .19 * s), C('#63a851'));
+        drawEllipse(o.add(vec2(.24 + sw, .52 * s)), vec2(.24 * s, .19 * s), C('#63a851'));
+        drawEllipse(o.add(vec2(sw, .64 * s)), vec2(.26 * s, .22 * s), C('#7cbd63'));
+        for (const [lx, ly, a] of [[-.44, .34, .5], [.44, .36, -.5], [-.22, .68, .35], [.24, .66, -.35]])
+            drawEllipse(o.add(vec2(lx + sw, ly * s)), vec2(.14 * s, .07 * s), C('#4f9444'), a);  // листики по краям
+        // помидоры сидят В кусте: тело + блик + зелёный чашелистик-звёздочка сверху
+        for (const [tx, ty, tr] of [[-.22, .22, .17], [.24, .3, .17], [.03, .12, .19], [-.03, .44, .15]]) {
+            const b = o.add(vec2(tx + sw * .5, ty * s));
+            drawCircle(b, tr * s, D(c.hue, .78));
+            drawCircle(b.add(vec2(-.02 * s, .02 * s)), (tr - .022) * s, body);
+            drawCircle(b.add(vec2(-.05 * s, -.05 * s)), tr * .3 * s, new Color(1, 1, 1, .5));
+            drawPoly([vec2(-.06, 0), vec2(.06, 0), vec2(0, .11)], C('#4f9444'), 0, undefined, b.add(vec2(0, tr * s)));
+        }
         break; }
     case 'cuke': {                                   // плети статичны, кончики чуть колышутся
         const sw = wind * .04;

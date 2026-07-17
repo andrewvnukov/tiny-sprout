@@ -127,6 +127,11 @@ function initUI() {
     document.addEventListener('pointerdown', kick, true);
     document.addEventListener('keydown', kick, true);
 
+    // пауза звука при сворачивании/выходе из приложения (иначе музыка играет в фоне)
+    document.addEventListener('visibilitychange', () => { if (document.hidden) audioSuspend(); else audioResume(); });
+    window.addEventListener('pagehide', audioSuspend);
+    window.addEventListener('pageshow', audioResume);
+
     setInterval(uiTick, 500);
 }
 function uiTick() {
@@ -403,6 +408,9 @@ function renderAlbum() {
                 : `<div class="cell dark"><div class="big"><span>?</span></div><small>???</small></div>`;
         });
         h += '</div><div class="hint">Открыто культур: ' + S.disc.filter(x=>x).length + ' / ' + CROPS.length + '</div>';
+    } else if (albumTab === 'rank') {
+        renderRank(box);   // асинхронно: подгружает лидерборд Яндекса
+        return;
     } else {
         for (const a of ACHS) {
             const got = !!S.ach[a.id];
@@ -416,6 +424,35 @@ function renderAlbum() {
     box.innerHTML = h;
 }
 function albumFlash() { /* хук на будущее — вспышка в альбоме */ }
+// рейтинг игроков по сумме золотых семян (только на платформе Яндекс Игр)
+function renderRank(box) {
+    if (!ysdk || typeof fetchLeaderboard !== 'function') {
+        box.innerHTML = '<div class="empty">Рейтинг доступен в приложении Яндекс Игр.</div>';
+        return;
+    }
+    box.innerHTML = '<div class="empty">Загрузка рейтинга…</div>';
+    fetchLeaderboard(res => {
+        if (albumTab !== 'rank') return;                       // пользователь ушёл на другую вкладку
+        if (!res || !res.entries || !res.entries.length) {
+            box.innerHTML = '<div class="empty">Пока пусто. Собери золотые семена и стань первым!</div>';
+            return;
+        }
+        const ur = res.userRank || 0;
+        let h = '';
+        for (const e of res.entries) {
+            const me = ur && e.rank === ur;
+            const nm = (e.player && e.player.publicName) || 'Игрок';
+            let av = '';
+            try { av = e.player && e.player.getAvatarSrc ? e.player.getAvatarSrc('small') : ''; } catch(x) {}
+            h += `<div class="row ${me ? 'sel' : ''}">
+                <div class="lbRank">${e.rank}</div>
+                ${av ? `<img class="lbAva" src="${av}" alt="">` : `<div class="ic">${ic('star')}</div>`}
+                <div class="info"><b>${nm}${me ? ' · ты' : ''}</b><small>${fmt(e.score)} ${icc('seed')}</small></div>
+            </div>`;
+        }
+        box.innerHTML = h;
+    });
+}
 
 // ---------- Престиж ----------
 function showPrestige() {
