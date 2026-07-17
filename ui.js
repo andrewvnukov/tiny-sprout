@@ -122,6 +122,8 @@ function initUI() {
 
     // музыка стартует по первому касанию где угодно (не только по канвасу)
     armMusicKick();
+    // заранее генерируем буфер музыки (~0.5 c CPU) в простое, чтобы первый тап не лагал
+    setTimeout(() => { try { if (!musicBuf) musicBuf = makeMusic(); } catch(e) {} }, 1200);
 
     // пауза звука при сворачивании/выходе из приложения (иначе музыка играет в фоне)
     document.addEventListener('visibilitychange', () => { if (document.hidden) audioSuspend(); else audioResume(); });
