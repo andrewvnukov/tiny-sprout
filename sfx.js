@@ -33,26 +33,26 @@ function sfx(name) {
 // иначе тяжёлый zzfxM пересчитывался бы на каждый тап.
 let musicSource = null, musicOn = false, musicBuf = null, musicPending = false, musicGain = null;
 function makeMusic() {
-    // Два синусоидных пэда — никаких колокольчиков, писков и резких атак.
-    // Долгая атака (0.5–0.7 c) = звук «вплывает» без щелчка; долгий релиз =
-    // такты плавно перетекают друг в друга.
+    // Структура: спокойное интро на пэдах (~9 c), затем лёгкий чилл-бит (мягкий
+    // кик + тихий хэт) поверх тех же пэдов, потом петля. Мягко, не давит на уши.
     const inst = [
-        [ .34, 0, 110, .5, 1.2, 1.4, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, .12, .8,  .1 ], // низкий пэд (0) — легче, не давит
-        [ .22, 0, 110, .7, 1.4, 1.6, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, .18, .75, .1 ], // верхний пэд (1)
+        [ .34, 0, 110, .5, 1.2, 1.4, 0, 1, 0, 0, 0,   0,  0, 0,   0, 0, .12, .8,  .1 ], // 0 низкий пэд
+        [ .22, 0, 110, .7, 1.4, 1.6, 0, 1, 0, 0, 0,   0,  0, 0,   0, 0, .18, .75, .1 ], // 1 верхний пэд
+        [ .34, .02, 130, .01, 0, .13, 0, 1, 0, 0, -120, .04, 0, 0, 0, 0, 0, 0, .05 ],   // 2 мягкий кик
+        [ .12, 0, 3000, 0, 0, .025, 0, 1, 0, 0, 0,   0,  0, 1.2, 0, 0, 0, 0, .01 ],     // 3 тихий хэт (шум)
     ];
-    // Такт = 8 долей (~3 c при BPM 40). Аккорд берётся один раз на долю 0 и
-    // «звенит» весь такт. Только открытые квинты (корень + нота на 7 полутонов
-    // выше) — такой интервал всегда консонанс, «неправильных» нот не бывает.
-    // Вся петля поднята на кварту вверх (светлее, не так давит), но нижний
-    // голос остаётся басовой опорой (196–293 Гц).
-    const line = (ins, note) => [ins, 0, note, 0, 0, 0, 0, 0, 0, 0];
+    // Такт = 8 долей (~3 c при BPM 40). Пэд — открытые квинты (корень + 7 п/т),
+    // всегда консонанс. Барабаны: нота 12 = базовая частота инструмента.
+    const pad  = (ins, n) => [ins, 0, n, 0, 0, 0, 0, 0, 0, 0];
+    const drum = (ins, on) => { const a = [ins, 0]; for (let i = 0; i < 8; i++) a.push(on.includes(i) ? 12 : 0); return a; };
+    const kick = drum(2, [0, 4]), hat = drum(3, [2, 6]), silK = drum(2, []), silH = drum(3, []);
+    const roots = [29, 24, 26, 22], fifths = [36, 31, 33, 29];
+    const bar = (ci, beat) => [ pad(0, roots[ci]), pad(1, fifths[ci]), beat ? kick : silK, beat ? hat : silH ];
     const pat = [
-        [ line(0, 29), line(1, 36) ], // C→ выше (293 + 440 Гц)
-        [ line(0, 24), line(1, 31) ], // G
-        [ line(0, 26), line(1, 33) ], // Am
-        [ line(0, 22), line(1, 29) ], // F  (низ 196 Гц — опора)
+        bar(0, false), bar(1, false), bar(2, false),                                   // интро — только пэды
+        bar(3, true), bar(0, true), bar(1, true), bar(2, true), bar(3, true),           // чилл-бит
     ];
-    return zzfxM(inst, pat, [0, 1, 2, 3, 0, 3, 2, 1], 40);
+    return zzfxM(inst, pat, [0, 1, 2, 3, 4, 5, 6, 7], 40);
 }
 function startMusic() {
     if (musicOn || musicPending || !S || (S.musVol || 0) <= 0) return;
@@ -85,10 +85,36 @@ function audioSuspend() {
     stopMusic();
     try { if (typeof audioContext !== 'undefined' && audioContext && audioContext.state === 'running') audioContext.suspend(); } catch(e) {}
 }
-// вернулись — оживляем контекст и (если музыка включена) запускаем заново
+// вернулись (разблокировали экран / развернули приложение) — оживляем контекст и
+// запускаем музыку заново. Авто-resume мобильный браузер может заблокировать без
+// жеста, поэтому дополнительно вооружаем запуск по первому касанию.
 function audioResume() {
-    try { if (typeof audioContext !== 'undefined' && audioContext) audioContext.resume(); } catch(e) {}
+    if (!S || (S.musVol || 0) <= 0) return;
+    musicPending = false;                       // сбросить возможный застрявший флаг
+    try {
+        if (typeof audioContext !== 'undefined' && audioContext) {
+            const p = audioContext.resume();
+            if (p && p.then) p.then(startMusic).catch(() => {});
+        }
+    } catch(e) {}
     startMusic();
+    armMusicKick();
+}
+// одноразовый слушатель: запустить музыку по первому жесту пользователя
+let _kickArmed = false;
+function armMusicKick() {
+    if (_kickArmed || !S || (S.musVol || 0) <= 0) return;
+    _kickArmed = true;
+    const kick = () => {
+        startMusic();
+        if (musicOn) {
+            _kickArmed = false;
+            document.removeEventListener('pointerdown', kick, true);
+            document.removeEventListener('keydown', kick, true);
+        }
+    };
+    document.addEventListener('pointerdown', kick, true);
+    document.addEventListener('keydown', kick, true);
 }
 // живое изменение громкости музыки (без перезапуска); на краях — старт/стоп
 function setMusicVolume() {

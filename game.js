@@ -444,31 +444,38 @@ function simulate(dt) {
     for (const p of S.plots)
         if (p.c >= 0) p.t = Math.min(p.t + dt, cropGrow(CROPS[p.c]));
 
-    // сборщик
+    // сборщик — готовый урожай на склад (while: при большом dt/офлайне срабатывает несколько раз)
     if (S.workers.harv) {
         harvT -= dt;
-        if (harvT <= 0) {
-            harvT = harvEvery();
+        let it = 0;
+        while (harvT <= 0 && it++ < 300) {
+            harvT += harvEvery();
+            let acted = false;
             for (let i = 0; i < S.plots.length; i++) {
                 const p = S.plots[i];
-                if (p.c >= 0 && p.t >= cropGrow(CROPS[p.c])) { harvestPlot(i, true); break; }
+                if (p.c >= 0 && p.t >= cropGrow(CROPS[p.c])) { acted = harvestPlot(i, true); break; }
             }
+            if (!acted) { harvT = harvEvery(); break; }   // нечего собрать или склад полон
         }
     }
-    // сеятель
+    // сеятель — засевает пустые грядки выбранной культурой
     if (S.workers.sow) {
         sowT -= dt;
-        if (sowT <= 0) {
-            sowT = sowEvery();
+        let it = 0;
+        while (sowT <= 0 && it++ < 300) {
+            sowT += sowEvery();
+            let acted = false;
             for (let i = 0; i < S.plots.length; i++)
-                if (S.plots[i].c < 0) { plantPlot(i, S.lastCrop, true); break; }
+                if (S.plots[i].c < 0) { acted = plantPlot(i, S.lastCrop, true); break; }
+            if (!acted) { sowT = sowEvery(); break; }
         }
     }
     // трактор: разом собирает и засевает всё
     if (S.workers.tract) {
         tractT -= dt;
-        if (tractT <= 0) {
-            tractT = tractEvery();
+        let it = 0;
+        while (tractT <= 0 && it++ < 200) {
+            tractT += tractEvery();
             let acted = false;
             for (let i = 0; i < S.plots.length; i++) {
                 const p = S.plots[i];
@@ -476,7 +483,7 @@ function simulate(dt) {
             }
             for (let i = 0; i < S.plots.length; i++)
                 if (S.plots[i].c < 0) acted = plantPlot(i, S.lastCrop, true) || acted;
-            if (acted) fxTractor();
+            if (acted) fxTractor(); else { tractT = tractEvery(); break; }
         }
     }
     // животные
@@ -625,24 +632,34 @@ function pickAt(cx, cy) {
     }
 }
 
-// ---------- Офлайн-заработок ----------
-let offlinePay = 0;
+// ---------- Офлайн: работники собирают урожай на склад (монеты авто НЕ капают) ----------
+let offlineT = 0;
+// прогоняем обычный sim крупными шагами: рост, сбор урожая работниками на склад
+// (с лимитом склада), производство животных. Доход/с (ips) офлайн не меняем.
+function fastForward(t) {
+    const ips = S.ips, best = S.bestIps;
+    let rem = t, g = 0;
+    while (rem > 0 && g++ < 2000) { simulate(Math.min(15, rem)); rem -= 15; }
+    S.ips = ips; S.bestIps = best;
+}
 function offlineCheck() {
     const dt = Math.max(0, (Date.now() - S.time) / 1000);
     if (dt < 60) return;
-    const t = Math.min(dt, OFFLINE_CAP);
-    // растения дорастают бесплатно
-    for (const p of S.plots)
-        if (p.c >= 0) p.t = Math.min(p.t + t, cropGrow(CROPS[p.c]));
-    offlinePay = Math.floor(S.ips * t * OFFLINE_RATE);
-    if (offlinePay >= 1) showOfflineModal(offlinePay, t);
+    offlineT = Math.min(dt, OFFLINE_CAP);
+    const before = storeTotal();
+    fastForward(offlineT);
+    const gain = storeTotal() - before;
+    if (gain > 0) showOfflineModal(gain, offlineT);   // без работников склад не пополняется — модалки нет
 }
-function takeOffline(mult) {
-    earn(offlinePay * mult);
-    sfx('coin');
-    offlinePay = 0;
+// «собрать ещё» (реклама): ещё столько же времени работы, если склад не полон
+function offlineBonus() {
+    const before = storeTotal();
+    fastForward(offlineT);
+    const extra = storeTotal() - before;
+    sfx(extra > 0 ? 'harvest' : 'error');
+    toast(extra > 0 ? '+' + extra + ' на склад' : 'Склад полон');
     persist(true);
-    renderHud();
+    renderHud(); renderBarn();
 }
 
 // ---------- Цикл LittleJS ----------

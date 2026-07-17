@@ -102,11 +102,10 @@ function initUI() {
     $('musSlider').oninput  = e => { S.musVol = e.target.value / 100; setMusicVolume(); persist(true); };
     // подсказки по значениям в левом верхнем углу
     const TIPS = {
-        coinChip: 'Монеты — покупай семена, грядки, технику и животных.',
+        coinChip: 'Монеты — покупай семена, грядки, технику и животных. Зарабатывай, продавая урожай.',
         seedChip: 'Золотые семена — награда за «Новый сезон». Дают постоянный бонус к доходу.',
-        ipsChip:  'Доход в секунду — сколько монет ферма приносит автоматически.',
     };
-    for (const id in TIPS) $(id).addEventListener('pointerdown', () => showTip(id, TIPS[id]));
+    for (const id in TIPS) { const el = $(id); if (el) el.addEventListener('pointerdown', () => showTip(id, TIPS[id])); }
     $('overlay').onclick   = closeAllSheets;
     for (const b of document.querySelectorAll('.close'))
         b.onclick = closeAllSheets;
@@ -122,10 +121,7 @@ function initUI() {
         b.onclick = () => closeModal(b.closest('.modal').id);
 
     // музыка стартует по первому касанию где угодно (не только по канвасу)
-    const kick = () => { if (booted) startMusic();
-        if (musicOn) { document.removeEventListener('pointerdown', kick, true); document.removeEventListener('keydown', kick, true); } };
-    document.addEventListener('pointerdown', kick, true);
-    document.addEventListener('keydown', kick, true);
+    armMusicKick();
 
     // пауза звука при сворачивании/выходе из приложения (иначе музыка играет в фоне)
     document.addEventListener('visibilitychange', () => { if (document.hidden) audioSuspend(); else audioResume(); });
@@ -182,7 +178,6 @@ function renderHud() {
     _prevSeeds = S.seeds;
     $('coinVal').textContent = coinTxt;
     $('seedVal').textContent = fmt(S.seeds);
-    $('ipsVal').textContent  = (S.ips >= .5 ? fmt(S.ips) : '0') + '/с';
     $('seedChip').style.display = (S.seeds > 0 || pendingSeeds() > 0 || S.cnt.prestiges > 0) ? '' : 'none';
 
     const c = CROPS[S.lastCrop];
@@ -471,10 +466,15 @@ function showPrestige() {
 }
 
 // ---------- Офлайн-модалка ----------
-function showOfflineModal(pay, t) {
-    $('offlineInfo').innerHTML = `Пока тебя не было (${fmtTime(t)}),<br>ферма заработала <b>${fmt(pay)} ${icc('coin')}</b>!`;
-    $('offlineTake').onclick = () => { takeOffline(1); closeModal('offlineModal'); };
-    $('offlineX2').onclick = () => showRewarded(() => { takeOffline(2); closeModal('offlineModal'); });
+function showOfflineModal(gain, t) {
+    $('offlineInfo').innerHTML = `Пока тебя не было (${fmtTime(t)}),<br>работники собрали <b>${fmt(gain)} ${icc('barn')} продуктов</b> на склад!`;
+    $('offlineTake').textContent = 'Отлично';
+    $('offlineTake').onclick = () => closeModal('offlineModal');
+    // реклама полезна только если на складе есть место
+    const room = storeTotal() < whCap();
+    $('offlineX2').style.display = room ? '' : 'none';
+    $('offlineX2').innerHTML = icc('ad') + 'Собрать ещё';
+    $('offlineX2').onclick = () => showRewarded(() => { offlineBonus(); closeModal('offlineModal'); });
     openModal('offlineModal');
 }
 
