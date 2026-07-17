@@ -678,10 +678,29 @@ function drawCropImg(o, img, s) {
     mainContext.imageSmoothingEnabled = true;
     mainContext.drawImage(img, b.x - w / 2, up.y, w, h);         // низ спрайта — в основании растения
 }
+// спрайт с наклоном (пивот — в основании), для гроздей мелких плодов
+function drawImgRot(o, img, hW, ang) {
+    const b = worldToScreen(o), up = worldToScreen(o.add(vec2(0, hW)));
+    const h = b.y - up.y, w = h * (img.naturalWidth / img.naturalHeight);
+    const ctx = mainContext;
+    ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(ang); ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, -w / 2, -h, w, h);
+    ctx.restore();
+}
+// огурец: куст листвы + несколько маленьких огурчиков под разными углами (не один плод)
+function drawCukeVine(o, s) {
+    const img = CROP_IMG.cuke, sw = Math.sin(time * 1.5 + o.x * 2.2) * .04;
+    drawEllipse(o.add(vec2(sw, .14 * s)), vec2(.52 * s, .2 * s), C('#4f8f3f'));           // низкая листва
+    drawEllipse(o.add(vec2(-.26 + sw, .22 * s)), vec2(.2 * s, .12 * s), C('#67ab52'), .3);
+    drawEllipse(o.add(vec2(.26 + sw, .2 * s)), vec2(.2 * s, .12 * s), C('#67ab52'), -.3);
+    for (const [dx, dy, ang, hW] of [[-.2, .12, -.5, .42], [.22, .16, .45, .38], [.02, .1, .12, .5]])
+        drawImgRot(o.add(vec2(dx * s + sw, dy * s)), img, hW * s, ang);
+}
 function drawCropArt(o, ci, s) {
     const c = CROPS[ci], top = C(c.top), body = C(c.hue);
+    if (c.id === 'cuke' && cropImgReady(CROP_IMG.cuke)) { drawCukeVine(o, s); return; }  // куст огурцов
     const spr = CROP_IMG[c.id];
-    if (cropImgReady(spr)) { drawCropImg(o, spr, s); return; }   // есть картинка — рисуем её
+    if (cropImgReady(spr)) { drawCropImg(o, spr, s); return; }   // одиночный плод (тыква/капуста/арбуз)
     const wind = Math.sin(time * 1.5 + o.x * 2.2);   // лёгкий ветер — только для ботвы/стеблей
     switch (c.id) {
     case 'wheat': {                                  // высокие колосья качаются целиком
