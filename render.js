@@ -701,15 +701,21 @@ function drawCropArt(o, ci, s) {
         for (const [fx, fy] of [[-.12, .48], [.15, .52]]) { const b = o.add(vec2(fx + sw, fy * s));  // цветки картофеля
             drawCircle(b, .04 * s, new Color(1, 1, 1, .9)); drawCircle(b, .018 * s, C('#f0c95e')); }
         break; }
-    case 'cabbage':                                  // круглый кочан с прожилками, низ в земле
-        drawEllipse(o.add(vec2(-.34 * s, .2 * s)), vec2(.22 * s, .16 * s), C(c.top), .5);   // внешние листья
-        drawEllipse(o.add(vec2(.34 * s, .2 * s)), vec2(.22 * s, .16 * s), C(c.top), -.5);
-        blob(o, 0, .3 * s, .42 * s, .4 * s, c.hue);                                          // шар-кочан
-        for (const dx of [-.24, -.09, .09, .24])                                             // прожилки листьев
-            drawLine(o.add(vec2(dx * s, .6 * s)), o.add(vec2(dx * .45 * s, .08 * s)), .028, D(c.hue, .82));
-        drawEllipse(o.add(vec2(0, .34 * s)), vec2(.2 * s, .22 * s), D(c.top, 1.05));         // светлая сердцевина
-        drawEllipse(o.add(vec2(-.06, .44 * s)), vec2(.11 * s, .09 * s), new Color(1, 1, 1, .25));
-        break;
+    case 'cabbage': {                                // кочан из перекрывающихся листьев, низ в земле
+        // широкие внешние листья веером у основания
+        drawEllipse(o.add(vec2(-.36 * s, .15 * s)), vec2(.27 * s, .16 * s), D(c.top, .88), .5);
+        drawEllipse(o.add(vec2(.36 * s, .15 * s)), vec2(.27 * s, .16 * s), D(c.top, .88), -.5);
+        drawEllipse(o.add(vec2(0, .1 * s)), vec2(.34 * s, .14 * s), D(c.top, .95));
+        // кочан из перекрывающихся листовых долей (тёмные швы между ними = обёрнутые листья)
+        blob(o, 0, .38 * s, .42 * s, .42 * s, c.hue);
+        drawEllipse(o.add(vec2(-.19 * s, .36 * s)), vec2(.2 * s, .34 * s), D(c.hue, .86), .16);   // левая доля
+        drawEllipse(o.add(vec2(.19 * s, .36 * s)), vec2(.2 * s, .34 * s), D(c.hue, .86), -.16);   // правая доля
+        drawEllipse(o.add(vec2(0, .34 * s)), vec2(.19 * s, .36 * s), C(c.hue));                   // центральная доля
+        // светлая свёрнутая сердцевина
+        drawEllipse(o.add(vec2(0, .42 * s)), vec2(.12 * s, .17 * s), D(c.top, 1.06));
+        drawEllipse(o.add(vec2(0, .5 * s)), vec2(.06 * s, .07 * s), D(c.top, 1.12));
+        drawEllipse(o.add(vec2(-.03, .52 * s)), vec2(.04 * s, .04 * s), new Color(1, 1, 1, .3));
+        break; }
     case 'tomato': {                                 // куст с гроздью помидоров — качается
         const sw = wind * .06;
         // листва: несколько перекрывающихся эллипсов = объёмный куст (не отдельный кружок)
@@ -728,19 +734,24 @@ function drawCropArt(o, ci, s) {
             drawPoly([vec2(-.06, 0), vec2(.06, 0), vec2(0, .11)], C('#4f9444'), 0, undefined, b.add(vec2(0, tr * s)));
         }
         break; }
-    case 'cuke': {                                   // плети-лианы с огурцами (как помидорный куст)
-        const sw = wind * .05;
-        drawEllipse(o.add(vec2(sw, .34 * s)), vec2(.5 * s, .38 * s), C('#4f8f3f'));          // листва
-        drawEllipse(o.add(vec2(-.26 + sw, .5 * s)), vec2(.22 * s, .18 * s), C('#63a851'));
-        drawEllipse(o.add(vec2(.24 + sw, .5 * s)), vec2(.22 * s, .18 * s), C('#63a851'));
-        drawEllipse(o.add(vec2(sw, .62 * s)), vec2(.24 * s, .2 * s), C('#7cbd63'));
-        drawLine(o.add(vec2(-.4 + sw, .5 * s)), o.add(vec2(-.5 + sw, .7 * s)), .025, C('#5f9e4a'));  // усики
-        drawLine(o.add(vec2(.4 + sw, .5 * s)), o.add(vec2(.52 + sw, .68 * s)), .025, C('#5f9e4a'));
-        for (const [cx, cy, ca] of [[-.24, .24, .5], [.26, .3, -.4], [.03, .13, .15]]) {     // огурцы — вытянутые
-            const b = o.add(vec2(cx + sw * .5, cy * s));
-            drawEllipse(b, vec2(.09 * s, .22 * s), D(c.hue, .8), ca);
-            drawEllipse(b.add(vec2(-.012 * s, .01 * s)), vec2(.072 * s, .2 * s), body, ca);
-            drawEllipse(b.add(vec2(-.02 * s, -.03 * s)), vec2(.02 * s, .09 * s), new Color(1, 1, 1, .35), ca);
+    case 'cuke': {                                   // стелющийся куст, из которого торчат огурцы
+        const sw = wind * .04;
+        // низкая широкая листва у земли (стелется — не вертикальное «туловище»)
+        drawEllipse(o.add(vec2(sw, .16 * s)), vec2(.58 * s, .22 * s), C('#4f8f3f'));
+        drawEllipse(o.add(vec2(-.28 + sw, .24 * s)), vec2(.2 * s, .12 * s), C('#67ab52'), .25);
+        drawEllipse(o.add(vec2(.26 + sw, .22 * s)), vec2(.2 * s, .12 * s), C('#67ab52'), -.25);
+        drawLine(o.add(vec2(.44 + sw, .22 * s)), o.add(vec2(.56 + sw, .38 * s)), .022, C('#5f9e4a'));  // усик
+        // огурцы: крупные, вытянутые, РАЗНОЙ длины и под разными углами (не симметрично),
+        // с пупырышками и светлым брюшком — так читается именно огурец, а не человечек
+        for (const [cx, cy, rot, ln] of [[-.02, .32, .95, .3], [.27, .4, -.4, .25], [-.3, .38, .38, .2]]) {
+            const b = o.add(vec2(cx + sw * .4, cy * s));
+            drawEllipse(b, vec2(.1 * s, ln * s), D(c.hue, .72), rot);
+            drawEllipse(b.add(vec2(.02 * s, 0)), vec2(.078 * s, (ln - .03) * s), body, rot);
+            drawEllipse(b.add(vec2(.03 * s, 0)), vec2(.026 * s, (ln - .09) * s), C('#8fce5f'), rot);  // брюшко
+            for (const t of [-.55, -.2, .15, .5]) {                                                   // пупырышки вдоль
+                const L = t * ln * s;
+                drawCircle(b.add(vec2(-L * Math.sin(rot), L * Math.cos(rot))), .014 * s, D(c.hue, .6));
+            }
         }
         break; }
     case 'corn': {                                   // высокий стебель качается целиком
