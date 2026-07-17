@@ -701,20 +701,21 @@ function drawCropArt(o, ci, s) {
         for (const [fx, fy] of [[-.12, .48], [.15, .52]]) { const b = o.add(vec2(fx + sw, fy * s));  // цветки картофеля
             drawCircle(b, .04 * s, new Color(1, 1, 1, .9)); drawCircle(b, .018 * s, C('#f0c95e')); }
         break; }
-    case 'cabbage': {                                // кочан из перекрывающихся листьев, низ в земле
-        // широкие внешние листья веером у основания
-        drawEllipse(o.add(vec2(-.36 * s, .15 * s)), vec2(.27 * s, .16 * s), D(c.top, .88), .5);
-        drawEllipse(o.add(vec2(.36 * s, .15 * s)), vec2(.27 * s, .16 * s), D(c.top, .88), -.5);
-        drawEllipse(o.add(vec2(0, .1 * s)), vec2(.34 * s, .14 * s), D(c.top, .95));
-        // кочан из перекрывающихся листовых долей (тёмные швы между ними = обёрнутые листья)
-        blob(o, 0, .38 * s, .42 * s, .42 * s, c.hue);
-        drawEllipse(o.add(vec2(-.19 * s, .36 * s)), vec2(.2 * s, .34 * s), D(c.hue, .86), .16);   // левая доля
-        drawEllipse(o.add(vec2(.19 * s, .36 * s)), vec2(.2 * s, .34 * s), D(c.hue, .86), -.16);   // правая доля
-        drawEllipse(o.add(vec2(0, .34 * s)), vec2(.19 * s, .36 * s), C(c.hue));                   // центральная доля
+    case 'cabbage': {                                // кочан с острыми внешними листьями, плотно прилегают
+        // острые листья веером — рисуем ДО кочана, он перекроет их основания (= прилегают, не отдельно)
+        const leaf = (a, len, col) => drawPoly([vec2(-.1 * s, 0), vec2(.1 * s, 0), vec2(0, len)], col, 0, undefined, o.add(vec2(0, .32 * s)), a);
+        for (const [a, len] of [[-1.2, .46], [-.78, .54], [-.32, .48], [.32, .48], [.78, .54], [1.2, .46]]) {
+            leaf(a, len * s, D(c.top, .82));
+            leaf(a, len * .78 * s, C(c.top));        // светлая середина листа — деталь и жилка
+        }
+        // кочан из перекрывающихся долей
+        blob(o, 0, .38 * s, .4 * s, .4 * s, c.hue);
+        drawEllipse(o.add(vec2(-.18 * s, .38 * s)), vec2(.19 * s, .32 * s), D(c.hue, .86), .16);
+        drawEllipse(o.add(vec2(.18 * s, .38 * s)), vec2(.19 * s, .32 * s), D(c.hue, .86), -.16);
+        drawEllipse(o.add(vec2(0, .36 * s)), vec2(.18 * s, .34 * s), C(c.hue));
         // светлая свёрнутая сердцевина
-        drawEllipse(o.add(vec2(0, .42 * s)), vec2(.12 * s, .17 * s), D(c.top, 1.06));
-        drawEllipse(o.add(vec2(0, .5 * s)), vec2(.06 * s, .07 * s), D(c.top, 1.12));
-        drawEllipse(o.add(vec2(-.03, .52 * s)), vec2(.04 * s, .04 * s), new Color(1, 1, 1, .3));
+        drawEllipse(o.add(vec2(0, .42 * s)), vec2(.11 * s, .16 * s), D(c.top, 1.06));
+        drawEllipse(o.add(vec2(0, .5 * s)), vec2(.055 * s, .06 * s), D(c.top, 1.12));
         break; }
     case 'tomato': {                                 // куст с гроздью помидоров — качается
         const sw = wind * .06;
@@ -774,25 +775,36 @@ function drawCropArt(o, ci, s) {
             drawCircle(b.add(vec2(.04, .07)), .02, new Color(1, 1, .9, .7));
             drawPoly([vec2(-.08, 0), vec2(.08, 0), vec2(0, -.11)], C(c.top), 0, undefined, b.add(vec2(0, .15 * s))); }
         break;
-    case 'pumpkin':                                  // большая тыква, низ в земле
-        blob(o, 0, .26 * s, .56 * s, .4 * s, c.hue);
-        drawEllipse(o.add(vec2(0, .26 * s)), vec2(.26 * s, .38 * s), C('#f0a45a'));
-        drawEllipse(o.add(vec2(-.3 * s, .26 * s)), vec2(.13 * s, .34 * s), D(c.hue, .9));
-        drawEllipse(o.add(vec2(.3 * s, .26 * s)), vec2(.12 * s, .32 * s), D(c.hue, .9));
-        drawRect(o.add(vec2(0, .62 * s)), vec2(.09, .16 * s), C('#7d915c'));
-        break;
-    case 'melon':                                    // полосатый арбуз наполовину в почве
-        blob(o, 0, .26 * s, .5 * s, .4 * s, c.hue);
-        for (let k = -1; k <= 1; k++) drawEllipse(o.add(vec2(k * .24 * s, .26 * s)), vec2(.07 * s, .36 * s), C('#2f5c3c'));
-        drawEllipse(o.add(vec2(-.16 * s, .36 * s)), vec2(.1 * s, .13 * s), new Color(1, 1, 1, .18));
-        break;
-    case 'grape':                                    // лоза на подпорке
-        drawLine(o.add(vec2(0, .1)), o.add(vec2(0, .72 * s)), .05, C('#8a6749'));
-        drawEllipse(o.add(vec2(0, .74 * s)), vec2(.22 * s, .12 * s), C(c.top));
-        for (const [xx, yy] of [[0, .16], [-.14, .3], [.14, .3], [0, .44]]) {
-            drawCircle(o.add(vec2(xx * s, yy * s)), .15 * s, D(c.hue, .82));
-            drawCircle(o.add(vec2((xx - .02) * s, (yy + .02) * s)), .13 * s, C(c.hue)); }
-        break;
+    case 'pumpkin': {                                // тыква: борозды строго на теле, силуэт — круглый шар
+        blob(o, 0, .28 * s, .58 * s, .4 * s, c.hue);
+        drawEllipse(o.add(vec2(0, .28 * s)), vec2(.24 * s, .37 * s), C('#f4b36a'));   // светлая центральная долька
+        for (const gx of [-.3, -.12, .12, .3]) {                                      // борозды-рёбра (внутри силуэта)
+            const hy = .4 * Math.sqrt(Math.max(0, 1 - (gx / .5) ** 2)) * .9;
+            drawEllipse(o.add(vec2(gx * s, .28 * s)), vec2(.02 * s, hy * s), D(c.hue, .74));
+        }
+        drawEllipse(o.add(vec2(-.08, .34 * s)), vec2(.09 * s, .18 * s), new Color(1, 1, 1, .1));   // блик
+        drawRect(o.add(vec2(.02, .64 * s)), vec2(.08, .12 * s), C('#6f8a4f'));                      // черенок
+        break; }
+    case 'melon': {                                  // арбуз: полосы на теле, силуэт — круглый шар
+        blob(o, 0, .28 * s, .52 * s, .4 * s, '#63b45c');
+        for (const dx of [-.26, -.13, 0, .13, .26]) {
+            const hy = .4 * Math.sqrt(Math.max(0, 1 - (dx / .44) ** 2)) * .92;
+            drawEllipse(o.add(vec2(dx * s, .28 * s)), vec2(.042 * s, hy * s), C('#2f6b3c'));
+        }
+        drawEllipse(o.add(vec2(-.14 * s, .4 * s)), vec2(.1 * s, .12 * s), new Color(1, 1, 1, .16));  // блик
+        break; }
+    case 'grape': {                                  // виноград: одревесневший стебель, лист и гроздь
+        drawLine(o.add(vec2(.05, .12)), o.add(vec2(-.01, .78 * s)), .045, C('#7a5a3c'));   // стебель
+        drawLine(o.add(vec2(-.01, .7 * s)), o.add(vec2(.16, .82 * s)), .03, C('#8a6749'));  // веточка к листу
+        drawEllipse(o.add(vec2(.24, .84 * s)), vec2(.2 * s, .13 * s), C(c.top), -.3);        // лист
+        for (const [ex, ey] of [[.12, .78], [.34, .9], [.28, .74]])
+            drawLine(o.add(vec2(.24, .84 * s)), o.add(vec2(ex, ey * s)), .014, D(c.top, .78)); // жилки листа
+        drawLine(o.add(vec2(-.01, .56 * s)), o.add(vec2(-.18, .64 * s)), .02, C('#8a6749'));  // усик
+        for (const [xx, yy] of [[-.17, .5], [0, .52], [.17, .5], [-.09, .38], [.09, .38], [0, .26], [-.04, .14]]) {
+            drawCircle(o.add(vec2(xx * s, yy * s)), .12 * s, D(c.hue, .78));
+            drawCircle(o.add(vec2((xx - .03) * s, (yy + .03) * s)), .1 * s, C(c.hue));
+            drawCircle(o.add(vec2((xx - .05) * s, (yy + .05) * s)), .028 * s, new Color(1, 1, 1, .4)); }
+        break; }
     case 'pine':                                     // ананас с хохолком, низ в земле
         drawEllipse(o.add(vec2(0, .3 * s)), vec2(.3 * s, .4 * s), D(c.hue, .82));
         drawEllipse(o.add(vec2(-.02, .32 * s)), vec2(.26 * s, .36 * s), body);
