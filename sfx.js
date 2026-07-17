@@ -32,10 +32,11 @@ function sfx(name) {
 // Мягкий эмбиент-пэд. Буфер генерируется ОДИН раз и кэшируется —
 // иначе тяжёлый zzfxM пересчитывался бы на каждый тап.
 let musicSource = null, musicOn = false, musicBuf = null, musicPending = false, musicGain = null;
+const MUSIC_INTRO_SEC = 6;   // интро (2 такта по 3 c) играет ОДИН раз, дальше грув зациклен
 function makeMusic() {
-    // ~3 минуты развивающегося чилла: интро на пэдах (~12 c), затем несколько
-    // секций с разными прогрессиями/мелодиями и «передышками», потом петля.
-    // МОНО (пан всё равно 0) — вдвое меньше памяти. Мягко, не давит на уши.
+    // Короткое интро на пэдах (~6 c, один раз), затем СТАБИЛЬНЫЙ грув: одна
+    // прогрессия + один и тот же мотив пианино, зацикленный бесшовно. Ничего не
+    // «переключается» — мелодия ровная. МОНО (пан 0) — вдвое меньше памяти.
     const inst = [
         [ .46, 0, 110, .5, 1.2, 1.4, 0, 1, 0, 0, 0,   0,  0, 0,   0, 0, .12, .8,  .1 ],           // 0 низкий пэд (громче)
         [ .32, 0, 110, .7, 1.4, 1.6, 0, 1, 0, 0, 0,   0,  0, 0,   0, 0, .18, .75, .1 ],           // 1 верхний пэд (громче)
@@ -53,16 +54,12 @@ function makeMusic() {
     const add = (prog, count, beat, mels) => {
         for (let k = 0; k < count; k++) pat.push(bar(prog[k % prog.length], beat, mels && mels[k % mels.length]));
     };
-    const progA = [29, 24, 26, 22], progB = [24, 26, 29, 22], progC = [26, 29, 22, 24];
-    // единый узнаваемый мотив пианино: «тын-тын» (2 ноты), такт паузы, следующая фраза.
-    // Ноты на офбитах (доли 2 и 6) — НЕ на киках (0/4), иначе кик глушит их.
+    const prog = [29, 24, 26, 22];
+    // единый узнаваемый мотив пианино: «тын-тын» (2 ноты) на офбитах (2/6, не на киках),
+    // такт паузы, следующая фраза. 8-тактовый цикл повторяется — мелодия стабильная.
     const mel = [ {2:36,6:33}, null, {2:31,6:29}, null, {2:33,6:36}, null, {2:31,6:33}, null ];
-    add(progA, 4, false, null);   // интро (~12 c) — только пэды
-    add(progA, 16, true, mel);    // секция A
-    add(progB, 4, false, null);   // передышка
-    add(progB, 16, true, mel);    // секция B
-    add(progC, 4, false, null);   // передышка
-    add(progC, 16, true, mel);    // секция C → петля  (итого 60 тактов ≈ 3 мин)
+    add(prog, 2, false, null);    // интро (~6 c) — только пэды, играет один раз
+    add(prog, 16, true, mel);     // стабильный грув (~48 c), зацикливается через loopStart/loopEnd
     return [ zzfxM(inst, pat, pat.map((_, i) => i), 40)[0] ];   // моно: берём один канал
 }
 function startMusic() {
@@ -78,7 +75,11 @@ function startMusic() {
             // собственный gain-узел: громкость музыки меняется на лету и независимо от эффектов
             if (!musicGain && typeof audioContext !== 'undefined') musicGain = audioContext.createGain();
             musicSource = playSamples(musicBuf, musGain(S.musVol), 1, 0, true, audioDefaultSampleRate, musicGain);
-            if (musicSource) musicOn = true;               // помечаем только при реальном старте
+            if (musicSource) {
+                musicOn = true;                            // помечаем только при реальном старте
+                // интро проигрывается один раз, потом зацикливается только грув
+                try { musicSource.loopStart = MUSIC_INTRO_SEC; musicSource.loopEnd = musicBuf[0].length / audioDefaultSampleRate; } catch(e) {}
+            }
         };
         const ac = (typeof audioContext !== 'undefined') ? audioContext : null;
         if (ac && ac.state !== 'running') {
