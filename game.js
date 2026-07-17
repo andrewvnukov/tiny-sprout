@@ -29,6 +29,8 @@ function freshState() {
         animals: { hen:0, cow:0, sheep:0 },
         animT: { hen:0, cow:0, sheep:0 },
         orders: [],
+        ordTok: ORDER_SLOTS, ordTokT: Date.now(),  // «ведро» появления заказов
+        ordSkipT: 0, ordSkipN: 0,                   // окно/счётчик смен заданий
         quests: [], qday: '', chestClaimed: false,
         ach: {},
         cnt: { harvests:0, sold:0, planted:0, orders:0, taps:0, aprods:0, goldens:0, prestiges:0,
@@ -233,11 +235,29 @@ function sellAll() {
 }
 
 // ---------- Заказы ----------
+// «ведро» появления: копится ORDERS_PER_HOUR токенов/час, потолок = ORDER_SLOTS.
+function regenOrderTokens() {
+    const now = Date.now();
+    if (!S.ordTokT) S.ordTokT = now;
+    if (typeof S.ordTok !== 'number') S.ordTok = ORDER_SLOTS;
+    S.ordTok = Math.min(ORDER_SLOTS, S.ordTok + (now - S.ordTokT) * (ORDERS_PER_HOUR / 3600000));
+    S.ordTokT = now;
+}
+// пустые слоты (null) заполняются только пока есть токены — заказы не бесконечны
 function ensureOrders() {
-    while (S.orders.length < ORDER_SLOTS) S.orders.push(rollOrder());
+    regenOrderTokens();
+    if (!Array.isArray(S.orders)) S.orders = [];
+    while (S.orders.length < ORDER_SLOTS) S.orders.push(null);
+    for (let k = 0; k < ORDER_SLOTS; k++)
+        if (!S.orders[k] && S.ordTok >= 1) { S.orders[k] = rollOrder(); S.ordTok -= 1; }
+}
+function skipsLeft() {
+    if (!S.ordSkipT || Date.now() - S.ordSkipT >= SKIP_WINDOW_MS) return SKIP_MAX;
+    return Math.max(0, SKIP_MAX - (S.ordSkipN || 0));
 }
 function fulfillOrder(k) {
     const o = S.orders[k];
+    if (!o) return;
     const c = CROPS[o.crop];
     if ((S.store[c.id]||0) < o.qty) { sfx('error'); toast('Не хватает: ' + c.name + ' x' + o.qty); return; }
     S.store[c.id] -= o.qty;
@@ -246,16 +266,22 @@ function fulfillOrder(k) {
     if (o.seed) { S.seeds += o.seed; toast('+1 золотое семя!'); }
     S.cnt.orders++;
     S.cnt.sold += o.qty;
-    S.orders[k] = rollOrder();
+    S.orders[k] = null;            // слот освобождён; новый придёт по «ведру» появления
+    ensureOrders();
     sfx('order');
     toast('Заказ выполнен! +' + fmt(o.reward) + ' монет');
     persist(true);
     renderOrders(); renderHud();
 }
 function skipOrder(k) {
-    S.orders[k] = rollOrder();
+    if (!S.orders[k]) return;
+    const now = Date.now();
+    if (!S.ordSkipT || now - S.ordSkipT >= SKIP_WINDOW_MS) { S.ordSkipT = now; S.ordSkipN = 0; }
+    if (S.ordSkipN >= SKIP_MAX) { sfx('error'); toast('Смена заданий: лимит ' + SKIP_MAX + ' за 2 часа'); return; }
+    S.ordSkipN++;
+    S.orders[k] = rollOrder();     // смена в том же слоте — «ведро» появления не тратим
     sfx('click');
-    persist();
+    persist(true);
     renderOrders();
 }
 
@@ -333,6 +359,7 @@ function doPrestige() {
     S.animals = { hen:0, cow:0, sheep:0 };
     S.animT = { hen:0, cow:0, sheep:0 };
     S.orders = [];
+    S.ordTok = ORDER_SLOTS; S.ordTokT = Date.now();
     S.boostUntil = 0;
     ensureOrders();
     sfx('prestige');
@@ -445,6 +472,7 @@ function simulate(dt) {
     }
     saveT -= dt;
     ensureQuests();
+    ensureOrders();   // фоновая докрутка «ведра» появления заказов
     checkAch();
 }
 
@@ -473,6 +501,9 @@ const FIELD_CX = -2.84, FIELD_CY = -3.6;          // центр поля (world)
 let camX = FIELD_CX, camY = FIELD_CY, camScale = 30, camMin = 14, camMax = 72;
 function initCamera() {
     const cw = mainCanvasSize.x, ch = mainCanvasSize.y;
+    // макс.зум привязан к разрешению bake (PPU=72). На плотных экранах даём
+    // запас на приближение (до 2×PPU) — иначе места для зума почти нет.
+    camMax = 72 * Math.min(2, window.devicePixelRatio || 1);
     camMin = Math.max(10, Math.min(cw / 30, ch / 20));
     camScale = Math.max(camMin, Math.min(camMax, Math.min(cw / 18, ch / 14)));
     camX = FIELD_CX; camY = FIELD_CY;
@@ -493,6 +524,7 @@ function ptrCanvas(cx, cy) {
 function ptrWorld(cx, cy) { return screenToWorld(ptrCanvas(cx, cy)); }
 
 const _ptrs = new Map();
+const PAN_DEAD = 12;   // мёртвая зона (CSS-px): движение меньше = тап, карта не едет
 let _tapId = null, _tapMoved = 0, _pinchDist = 0;
 function initCameraInput() {
     const cvs = document.querySelectorAll('canvas');
@@ -526,14 +558,15 @@ function onMove(e) {
             camX += wB.x - wA.x; camY += wB.y - wA.y; applyCam();
         }
         _pinchDist = nd;
-    } else if (_tapId === e.pointerId) {          // якорный пан
+    } else if (_tapId === e.pointerId) {          // якорный пан — только за пределами мёртвой зоны
         _tapMoved += Math.abs(e.clientX - ox) + Math.abs(e.clientY - oy);
+        if (_tapMoved <= PAN_DEAD) return;        // ещё тап — карту не двигаем
         const wP = ptrWorld(ox, oy), wN = ptrWorld(e.clientX, e.clientY);
         camX += wP.x - wN.x; camY += wP.y - wN.y; applyCam();
     }
 }
 function onUp(e) {
-    const tap = (_tapId === e.pointerId && _tapMoved < 10);
+    const tap = (_tapId === e.pointerId && _tapMoved <= PAN_DEAD);
     _ptrs.delete(e.pointerId);
     if (_ptrs.size < 2) _pinchDist = 0;
     if (_ptrs.size === 0) _tapId = null;
@@ -610,7 +643,7 @@ window.render_game_to_text = () => JSON.stringify({
     zones: S.zones, lastCrop: CROPS[S.lastCrop].id,
     store: S.store, storeTotal: storeTotal(), whCap: whCap(),
     up: S.up, workers: S.workers, animals: S.animals,
-    orders: S.orders.map(o=>({ crop: CROPS[o.crop].id, qty:o.qty, reward:o.reward })),
+    orders: S.orders.filter(Boolean).map(o=>({ crop: CROPS[o.crop].id, qty:o.qty, reward:o.reward })),
     quests: S.quests.map(q=>({ id:q.id, prog:qProg(q), n:q.n, claimed:q.claimed })),
     cnt: S.cnt, boost: boostOn(), tut: S.tut,
 });
@@ -635,6 +668,12 @@ function boot(raw) {
     // drawImage, поверх — немного примитивов; порядок отрисовки сохраняется
     setGLEnable(false);
     setTilesPixelated(false);   // сглаживание drawImage запечённого мира (не пиксель-арт)
+    // рендерим в НАТИВНОМ разрешении экрана. По умолчанию LittleJS рисует в
+    // 1× CSS-пикселях (canvasPixelRatio=1), и на плотных мобильных экранах
+    // (DPR 2–3) браузер растягивает кадр = «пиксели». Ставим реальный DPR
+    // (ограничен 3 ради fill-rate) и снимаем потолок 1920×1080.
+    setCanvasPixelRatio(Math.min(3, window.devicePixelRatio || 1));
+    setCanvasMaxSize(vec2(4096, 4096));
     engineInit(gameInit, gameUpdate, gameUpdatePost, gameRender, gameRenderPost);
     const localRaw = (() => { try { return localStorage.getItem(SAVE_KEY); } catch(e) { return null; } })();
     let done = false;

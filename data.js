@@ -92,6 +92,9 @@ const pendingSeeds = () => prestigeUnlocked() ? Math.max(0, seedsFromEarned(S.se
 // ---------- Заказы ----------
 const ORDER_MULT = 1.6;    // цена заказа против рынка
 const ORDER_SLOTS = 3;
+const ORDERS_PER_HOUR = 6;              // сколько НОВЫХ заказов появляется за час (не бесконечно)
+const SKIP_MAX = 4;                     // сколько раз можно сменить задание…
+const SKIP_WINDOW_MS = 2 * 3600 * 1000; // …за это окно (2 часа)
 function rollOrder() {
     const open = CROPS.map((c,i)=>i).filter(i => S.crops[i]);
     const i = open[Math.floor(Math.random()*open.length)];

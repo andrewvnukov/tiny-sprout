@@ -182,7 +182,7 @@ function renderHud() {
         for (const id in S.store) sum += priceOf(id) * S.store[id];
         $('sellBtn').innerHTML = icc('sell') + ' +' + fmt(sum);
     }
-    const ordReady = S.orders.filter(o => (S.store[CROPS[o.crop].id]||0) >= o.qty).length
+    const ordReady = S.orders.filter(o => o && (S.store[CROPS[o.crop].id]||0) >= o.qty).length
         + S.quests.filter(q => !q.claimed && qProg(q) >= q.n).length;
     $('orderBadge').textContent = ordReady;
     $('orderBadge').style.display = ordReady ? '' : 'none';
@@ -201,7 +201,8 @@ function renderCropPick() {
     CROPS.forEach((c, i) => {
         if (!S.crops[i]) return;
         h += `<button class="cell pick ${i === S.lastCrop ? 'sel' : ''}" onclick="pickCrop(${i})">
-            <div class="big">${ic(c.id)}</div><small>${c.name}</small></button>`;
+            <div class="big">${ic(c.id)}</div><small>${c.name}</small>
+            <small style="color:var(--ink-soft);font-size:10.5px">семя ${fmt(c.seed)} ${icc('coin')}</small></button>`;
     });
     h += `<button class="cell pick" onclick="openShopSeeds()"><div class="big"><span>+</span></div><small>купить</small></button>`;
     $('cropPickList').innerHTML = h;
@@ -317,7 +318,16 @@ function renderOrders() {
     const box = $('orderList');
     let h = '';
     if (orderTab === 'orders') {
+        const left = skipsLeft();
         S.orders.forEach((o, k) => {
+            if (!o) {   // слот ждёт нового заказа (ограничение появления)
+                h += `<div class="row" style="opacity:.6">
+                    <div class="ic">${ic('orders')}</div>
+                    <div class="info"><b>Новый заказ скоро…</b>
+                    <small>появляются до ${ORDERS_PER_HOUR} в час</small></div>
+                </div>`;
+                return;
+            }
             const c = CROPS[o.crop];
             const have = S.store[c.id]||0;
             const ok = have >= o.qty;
@@ -326,9 +336,10 @@ function renderOrders() {
                 <div class="info"><b>${c.name} x${o.qty}</b>
                 <small>есть ${have}/${o.qty} · награда ${fmt(o.reward)} ${icc('coin')}${o.seed ? ' + '+icc('seed') : ''}</small></div>
                 <button class="btn ${ok?'':'no'}" onclick="fulfillOrder(${k})">сдать</button>
-                <button class="btn ghost" onclick="skipOrder(${k})"><span class="ci">${ic('refresh')}</span></button>
+                <button class="btn ghost ${left>0?'':'no'}" onclick="skipOrder(${k})" title="Смен осталось: ${left}"><span class="ci">${ic('refresh')}</span></button>
             </div>`;
         });
+        h += `<div style="text-align:center;color:var(--ink-soft);font-size:12px;padding:6px 0 2px">Смена задания: осталось ${left} из ${SKIP_MAX} за 2 часа</div>`;
     } else {
         S.quests.forEach((q, k) => {
             const p = qProg(q);
