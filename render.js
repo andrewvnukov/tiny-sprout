@@ -678,23 +678,29 @@ function drawCropImg(o, img, s) {
     mainContext.imageSmoothingEnabled = true;
     mainContext.drawImage(img, b.x - w / 2, up.y, w, h);         // низ спрайта — в основании растения
 }
-// спрайт с наклоном (пивот — в основании), для гроздей мелких плодов
-function drawImgRot(o, img, hW, ang) {
+// спрайт с наклоном, пивот — по ЦЕНТРУ (для лежащих плодов)
+function drawImgRotC(o, img, hW, ang) {
     const b = worldToScreen(o), up = worldToScreen(o.add(vec2(0, hW)));
     const h = b.y - up.y, w = h * (img.naturalWidth / img.naturalHeight);
     const ctx = mainContext;
     ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(ang); ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(img, -w / 2, -h, w, h);
+    ctx.drawImage(img, -w / 2, -h / 2, w, h);
     ctx.restore();
 }
-// огурец: куст листвы + несколько маленьких огурчиков под разными углами (не один плод)
+// огурцы ЛЕЖАТ на грядке среди листвы; листья двумя слоями (часть под, часть над),
+// огурцы низко — не выходят за землю грядки.
 function drawCukeVine(o, s) {
-    const img = CROP_IMG.cuke, sw = Math.sin(time * 1.5 + o.x * 2.2) * .04;
-    drawEllipse(o.add(vec2(sw, .14 * s)), vec2(.52 * s, .2 * s), C('#4f8f3f'));           // низкая листва
-    drawEllipse(o.add(vec2(-.26 + sw, .22 * s)), vec2(.2 * s, .12 * s), C('#67ab52'), .3);
-    drawEllipse(o.add(vec2(.26 + sw, .2 * s)), vec2(.2 * s, .12 * s), C('#67ab52'), -.3);
-    for (const [dx, dy, ang, hW] of [[-.2, .12, -.5, .42], [.22, .16, .45, .38], [.02, .1, .12, .5]])
-        drawImgRot(o.add(vec2(dx * s + sw, dy * s)), img, hW * s, ang);
+    const img = CROP_IMG.cuke, sw = Math.sin(time * 1.5 + o.x * 2.2) * .03;
+    const leaf = (dx, dy, rx, ry, ang, col) => drawEllipse(o.add(vec2(dx * s + sw, dy * s)), vec2(rx * s, ry * s), C(col), ang);
+    const cuke = (dx, dy, ang, hW) => drawImgRotC(o.add(vec2(dx * s + sw, dy * s)), img, hW * s, ang);   // ~π/2 = лежит
+    // нижний слой листвы (под огурцами)
+    leaf(-.28, .12, .17, .1, .5, '#4f8f3f'); leaf(.28, .1, .17, .1, -.5, '#4f8f3f');
+    leaf(0, .16, .2, .11, 0, '#5c9e48');     leaf(-.12, .2, .15, .09, .3, '#67ab52');
+    // огурцы лежат, низко, в пределах грядки
+    cuke(-.15, .12, 1.45, .4); cuke(.17, .16, 1.78, .38); cuke(.0, .09, 1.3, .36);
+    // верхний слой листвы (поверх огурцов)
+    leaf(.14, .22, .16, .1, -.4, '#67ab52'); leaf(-.2, .19, .15, .09, .5, '#5c9e48');
+    leaf(.03, .24, .14, .085, .1, '#72b45a');
 }
 function drawCropArt(o, ci, s) {
     const c = CROPS[ci], top = C(c.top), body = C(c.hue);
