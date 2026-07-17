@@ -253,6 +253,14 @@ function shopAvail() {
         anim:  ANIMALS.filter(a => S.animals[a.id] < a.max && S.coins >= animalCost(a, S.animals[a.id])).length,
     };
 }
+// характеристика работника на текущем уровне (или 1-м, если ещё не нанят)
+function workerStat(w) {
+    const lvl = Math.max(1, S.workers[w.id]);
+    if (w.id === 'harv')   return 'собирает урожай раз в ' + (6 / Math.pow(1.5, lvl-1)).toFixed(1) + ' c';
+    if (w.id === 'sow')    return 'сажает растение раз в ' + (7 / Math.pow(1.5, lvl-1)).toFixed(1) + ' c';
+    if (w.id === 'seller') return 'продаёт до ' + (2 + lvl) + ' товаров раз в ' + (5 / Math.pow(1.4, lvl-1)).toFixed(1) + ' c';
+    return '';
+}
 function renderShop() {
     const avail = shopAvail();
     for (const b of document.querySelectorAll('#shopSheet .tab'))
@@ -288,13 +296,14 @@ function renderShop() {
             </div>`;
         }
     } else if (shopTab === 'work') {
+        h += `<div class="hint">Работники автоматизируют ферму: сеятель сажает, сборщик собирает, продавец продаёт склад за монеты. Благодаря им ферма работает и приносит доход даже офлайн.</div>`;
         for (const w of WORKERS) {
             const lvl = S.workers[w.id];
             const maxed = lvl >= w.max;
             const cost = workerCost(w, lvl);
             h += `<div class="row">
-                <div class="ic">${ic(w.id)}</div>
-                <div class="info"><b>${w.name} <em>${lvl ? 'ур.'+lvl : ''}</em></b><small>${w.desc}</small></div>
+                <div class="ic">${ic(w.id === 'seller' ? 'sell' : w.id)}</div>
+                <div class="info"><b>${w.name} <em>${lvl ? 'ур.'+lvl : ''}</em></b><small>${w.desc}<br>⚙ ${workerStat(w)}</small></div>
                 ${maxed ? '<span class="tag">макс</span>'
                         : `<button class="btn ${S.coins>=cost?'':'no'}" onclick="buyWorker('${w.id}')">${fmt(cost)} ${icc('coin')}</button>`}
             </div>`;
@@ -468,14 +477,15 @@ function showPrestige() {
 }
 
 // ---------- Офлайн-модалка ----------
-function showOfflineModal(gain, t) {
-    $('offlineInfo').innerHTML = `Пока тебя не было (${fmtTime(t)}),<br>работники собрали <b>${fmt(gain)} ${icc('barn')} продуктов</b> на склад!`;
+function showOfflineModal(coins, store, t) {
+    const parts = [];
+    if (coins > 0) parts.push(`продавец наторговал <b>${fmt(coins)} ${icc('coin')}</b>`);
+    if (store > 0) parts.push(`работники собрали <b>${store} ${icc('barn')}</b> на склад`);
+    $('offlineInfo').innerHTML = `Пока тебя не было (${fmtTime(t)}),<br>` + (parts.join('<br>и ') || 'ничего не изменилось') + '!';
     $('offlineTake').textContent = 'Отлично';
     $('offlineTake').onclick = () => closeModal('offlineModal');
-    // реклама полезна только если на складе есть место
-    const room = storeTotal() < whCap();
-    $('offlineX2').style.display = room ? '' : 'none';
-    $('offlineX2').innerHTML = icc('ad') + 'Собрать ещё';
+    $('offlineX2').style.display = '';
+    $('offlineX2').innerHTML = icc('ad') + 'Продолжить x2';
     $('offlineX2').onclick = () => showRewarded(() => { offlineBonus(); closeModal('offlineModal'); });
     openModal('offlineModal');
 }

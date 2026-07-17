@@ -10,7 +10,7 @@ const INKC = new Color().setHex('#4a3628');
 // grow: сек роста, seed: цена посадки, sell: цена продажи,
 // unlock: цена открытия (0 = открыта), zone: нужная зона
 const CROPS = [
-    { id:'wheat',  name:'Пшеница',   grow:8,    seed:5,     sell:12,     unlock:0,       zone:0, hue:'#e8c95a', top:'#f2df8e' },
+    { id:'wheat',  name:'Пшеница',   grow:8,    seed:0,     sell:12,     unlock:0,       zone:0, hue:'#e8c95a', top:'#f2df8e' },
     { id:'carrot', name:'Морковь',   grow:15,   seed:12,    sell:32,     unlock:100,     zone:0, hue:'#e8813a', top:'#7fbf4d' },
     { id:'potato', name:'Картофель', grow:30,   seed:30,    sell:85,     unlock:400,     zone:0, hue:'#c9a06a', top:'#6faf5a' },
     { id:'cabbage',name:'Капуста',   grow:60,   seed:70,    sell:210,    unlock:1500,    zone:0, hue:'#9fd06a', top:'#b8e08a' },
@@ -48,11 +48,11 @@ const ZONES = [
 const MAXPLOTS = ZONES.reduce((s,z)=>s+z.plots, 0);
 
 // ---------- Работники / техника ----------
-// harv: сборщик (авто-сбор), sow: сеятель (авто-посадка), tract: трактор (цикл сбор+посев всего)
+// harv: сборщик (авто-сбор), sow: сеятель (авто-посадка), seller: продавец (авто-продажа склада)
 const WORKERS = [
     { id:'harv',  name:'Сборщик',  desc:'Сам собирает готовый урожай', cost:5000,   costMul:3.5, max:6 },
     { id:'sow',   name:'Сеятель', desc:'Сам засевает пустые грядки',  cost:12000,  costMul:3.5, max:6 },
-    { id:'tract', name:'Трактор',      desc:'Раз в цикл собирает и засевает всё поле', cost:150000, costMul:4, max:5 },
+    { id:'seller', name:'Продавец',    desc:'Стоит у прилавка и сам продаёт урожай со склада за монеты', cost:150000, costMul:4, max:5 },
 ];
 
 // ---------- Улучшения (бесконечные, за монеты) ----------
@@ -78,9 +78,10 @@ const cropGrow  = c => c.grow / growMult();
 const cropSell  = (c, golden) => Math.round(c.sell * sellMult() * (golden ? 5 : 1));
 
 // скорость работников: интервал между действиями, сек
-const harvEvery  = () => S.workers.harv  ? 6 / Math.pow(1.5, S.workers.harv-1)  : 0;
-const sowEvery   = () => S.workers.sow   ? 7 / Math.pow(1.5, S.workers.sow-1)   : 0;
-const tractEvery = () => S.workers.tract ? 90 / Math.pow(1.35, S.workers.tract-1) : 0;
+const harvEvery  = () => S.workers.harv   ? 6 / Math.pow(1.5, S.workers.harv-1)  : 0;
+const sowEvery   = () => S.workers.sow    ? 7 / Math.pow(1.5, S.workers.sow-1)   : 0;
+const sellEvery  = () => S.workers.seller ? 5 / Math.pow(1.4, S.workers.seller-1) : 0;  // как часто продавец продаёт
+const sellQty    = () => S.workers.seller ? 2 + S.workers.seller : 0;                    // сколько товаров за раз
 
 // ---------- Престиж ----------
 // Семена считаются от СУММАРНОГО заработка за всё время (lifeEarned), а не за

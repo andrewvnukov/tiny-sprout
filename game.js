@@ -9,7 +9,7 @@ let ysdk = null;
 const LB_NAME = 'goldenSeeds';         // техническое имя лидерборда в консоли Яндекс Игр
 let lbBoard = null, _lbLast = -1;
 let earnAcc = 0, ipsTimer = 0;
-let harvT = 0, sowT = 0, tractT = 0;   // таймеры работников (не сохраняются)
+let harvT = 0, sowT = 0, sellT = 0;   // таймеры работников (не сохраняются)
 let saveT = 0;
 let booted = false;
 
@@ -27,7 +27,7 @@ function freshState() {
         zones: 1,
         store: {},
         up: { fert:0, comp:0, wh:0, gold:0 },
-        workers: { harv:0, sow:0, tract:0 },
+        workers: { harv:0, sow:0, seller:0 },
         animals: { hen:0, cow:0, sheep:0 },
         animT: { hen:0, cow:0, sheep:0 },
         orders: [],
@@ -71,6 +71,9 @@ function restore(raw) {
             if (d[k] !== undefined) f[k] = d[k];
         for (const k in f.up)      if (typeof f.up[k] !== 'number') f.up[k] = 0;
         for (const k in f.workers) if (typeof f.workers[k] !== 'number') f.workers[k] = 0;
+        // миграция: трактор заменён продавцом — переносим уровни
+        if (typeof f.workers.seller !== 'number') f.workers.seller = (typeof f.workers.tract === 'number' ? f.workers.tract : 0);
+        delete f.workers.tract;
         for (const k in f.animals) if (typeof f.animals[k] !== 'number') f.animals[k] = 0;
         const c = freshState().cnt;
         f.cnt = Object.assign(c, f.cnt);
@@ -386,7 +389,7 @@ function doPrestige() {
     S.zones = 1;
     S.store = {};
     S.up = { fert:0, comp:0, wh:0, gold:0 };
-    S.workers = { harv:0, sow:0, tract:0 };
+    S.workers = { harv:0, sow:0, seller:0 };
     S.animals = { hen:0, cow:0, sheep:0 };
     S.animT = { hen:0, cow:0, sheep:0 };
     S.orders = [];
@@ -470,20 +473,22 @@ function simulate(dt) {
             if (!acted) { sowT = sowEvery(); break; }
         }
     }
-    // трактор: разом собирает и засевает всё
-    if (S.workers.tract) {
-        tractT -= dt;
+    // продавец: продаёт урожай со склада за монеты (можно зарабатывать и офлайн)
+    if (S.workers.seller) {
+        sellT -= dt;
         let it = 0;
-        while (tractT <= 0 && it++ < 200) {
-            tractT += tractEvery();
-            let acted = false;
-            for (let i = 0; i < S.plots.length; i++) {
-                const p = S.plots[i];
-                if (p.c >= 0 && p.t >= cropGrow(CROPS[p.c])) acted = harvestPlot(i, true) || acted;
+        while (sellT <= 0 && it++ < 300) {
+            sellT += sellEvery();
+            let left = sellQty(), got = 0;
+            const ids = Object.keys(S.store).sort((a, b) => priceOf(b) - priceOf(a));  // сначала дорогие
+            for (const id of ids) {
+                if (left <= 0) break;
+                const take = Math.min(left, S.store[id]);
+                if (take <= 0) continue;
+                S.store[id] -= take; if (!S.store[id]) delete S.store[id];
+                got += priceOf(id) * take; S.cnt.sold += take; left -= take;
             }
-            for (let i = 0; i < S.plots.length; i++)
-                if (S.plots[i].c < 0) acted = plantPlot(i, S.lastCrop, true) || acted;
-            if (acted) fxTractor(); else { tractT = tractEvery(); break; }
+            if (got > 0) earn(got); else { sellT = sellEvery(); break; }   // склад пуст — ждём
         }
     }
     // животные
@@ -646,18 +651,19 @@ function offlineCheck() {
     const dt = Math.max(0, (Date.now() - S.time) / 1000);
     if (dt < 60) return;
     offlineT = Math.min(dt, OFFLINE_CAP);
-    const before = storeTotal();
+    const c0 = Math.floor(S.coins), st0 = storeTotal();
     fastForward(offlineT);
-    const gain = storeTotal() - before;
-    if (gain > 0) showOfflineModal(gain, offlineT);   // без работников склад не пополняется — модалки нет
+    const coins = Math.floor(S.coins) - c0;      // продавец наторговал
+    const store = storeTotal() - st0;            // работники собрали на склад
+    if (coins > 0 || store > 0) showOfflineModal(coins, store, offlineT);
 }
-// «собрать ещё» (реклама): ещё столько же времени работы, если склад не полон
+// «продолжить» (реклама): ещё столько же времени работы
 function offlineBonus() {
-    const before = storeTotal();
+    const c0 = Math.floor(S.coins), st0 = storeTotal();
     fastForward(offlineT);
-    const extra = storeTotal() - before;
-    sfx(extra > 0 ? 'harvest' : 'error');
-    toast(extra > 0 ? '+' + extra + ' на склад' : 'Склад полон');
+    const coins = Math.floor(S.coins) - c0, store = storeTotal() - st0;
+    sfx(coins > 0 || store > 0 ? 'coin' : 'error');
+    toast(coins > 0 ? '+' + fmt(coins) + ' монет' : store > 0 ? '+' + store + ' на склад' : 'Ничего нового');
     persist(true);
     renderHud(); renderBarn();
 }

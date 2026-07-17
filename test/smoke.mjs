@@ -31,7 +31,7 @@ const plotXY = await page.evaluate(() => { const p = worldToScreen(plotPos(0)); 
 await page.mouse.click(plotXY.x, plotXY.y);
 await page.waitForTimeout(200);
 s = await state();
-check('plant: wheat planted, coins spent', s.plots[0].crop === 'wheat' && s.coins === 20);
+check('plant: wheat planted (free)', s.plots[0].crop === 'wheat' && s.coins === 25);
 check('plant: tut advanced to 1', s.tut === 1);
 
 // вырастить (пшеница 8с) и собрать кликом

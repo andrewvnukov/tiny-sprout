@@ -504,7 +504,6 @@ function buildWorld() {
 // ---------- Эффекты ----------
 const floats = [];
 const pops = [];
-let tractorT = -99, tractorRow = 0;
 let prestigeT = 0;
 
 function addFloat(p, txt, col) { floats.push({ p: p.copy(), txt, col, t: 1.2 }); }
@@ -519,7 +518,6 @@ function fxTap(i) {
     const p = plotPos(i);
     pops.push({ p: p.add(vec2((Math.random() - .5) * .8, BED_DEP + .2)), v: vec2(0, 1.6), col: '#c3dd9a', t: .5, r: .08 });
 }
-function fxTractor() { tractorT = 0; tractorRow = Math.floor(Math.random() * Math.max(1, S.plots.length) / 4) | 0; }
 function fxPrestige() {
     prestigeT = 2;
     for (let k = 0; k < 60; k++)
@@ -583,6 +581,7 @@ function renderWorld() {
     if (S.zones < ZONES.length) { const g = zoneCenterGrid(S.zones); push(g.gx, g.gy, () => drawZoneSign(S.zones), .5); }
     pushAnimals(push);
     pushWorkers(push);
+    pushSeller(push);
     // передний забор загонов — поверх животных (они прячутся за ним)
     for (const id of ['hen', 'cow', 'sheep'])
         if (S.animals[id] > 0) { const pd = PADDOCK[id]; push(pd.x1, pd.y1, () => drawPenFront(id), .06); }
@@ -590,7 +589,6 @@ function renderWorld() {
     items.sort((a, b) => a.d - b.d);
     for (const it of items) it.fn();
 
-    drawTractor();
     drawParticles();
 }
 
@@ -1012,49 +1010,57 @@ function drawWorker(e, id) {
     drawCircle(p.add(vec2(-.15, .55)), .045, new Color(.95, .66, .6, .55));
     drawCircle(p.add(vec2(.15, .55)), .045, new Color(.95, .66, .6, .55));
 }
-function drawTractor() {
-    if (!S.workers.tract || tractorT < 0 || tractorT > 3) return;
-    tractorT += timeDelta;
-    const prog = tractorT / 3;
-    const gy = tractorRow * 1 + 0.5;
-    const gx = -3 + prog * 6;
-    const p = isoWorld(gx, gy).add(vec2(0, .1));
-    drawEllipse(p.add(vec2(0, -.05)), vec2(.98, .16), SHADOW);
-    // заднее большое колесо: шина, обод, диск, ступица, болты
-    drawCircle(p.add(vec2(-.52, .2)), .42, C('#4b4239'));
-    drawCircle(p.add(vec2(-.52, .2)), .34, C('#5c5346'));
-    drawCircle(p.add(vec2(-.52, .2)), .21, C('#e7d6b8'));
-    drawCircle(p.add(vec2(-.52, .2)), .075, C('#b8a37c'));
-    for (let i = 0; i < 6; i++) {
-        const an = i / 6 * 6.283;
-        drawCircle(p.add(vec2(-.52 + Math.cos(an) * .13, .2 + Math.sin(an) * .13)), .022, C('#b8a37c'));
+// ---------- Продавец: прилавок внизу карты + гуляющий продавец ----------
+let sellerEnt = null;
+function pushSeller(push) {
+    if (!S.workers.seller) { sellerEnt = null; return; }
+    const home = vec2(FIELD_CX + 3.4, FIELD_CY + 6.2);   // у прилавка, в нижней части карты (runtime)
+    let e = sellerEnt;
+    if (!e) e = sellerEnt = { p: home.copy(), t: home.copy(), ph: Math.random() * 9, wait: 2 };
+    if (Math.abs(e.p.x - e.t.x) < .12 && Math.abs(e.p.y - e.t.y) < .12) {   // дошёл — постоять и выбрать новую цель
+        e.wait -= timeDelta;
+        if (e.wait <= 0) {
+            e.t = Math.random() < .55 ? home.copy() : home.add(vec2((Math.random() - .5) * 7, (Math.random() - .5) * 3));
+            e.wait = 3 + Math.random() * 6;
+        }
     }
-    // переднее малое колесо
-    drawCircle(p.add(vec2(.66, .12)), .24, C('#4b4239'));
-    drawCircle(p.add(vec2(.66, .12)), .12, C('#e7d6b8'));
-    drawCircle(p.add(vec2(.66, .12)), .045, C('#b8a37c'));
-    // рама
-    drawRect(p.add(vec2(.08, .32)), vec2(1.34, .16), C('#7a4436'));
-    // корпус и капот
-    drawRect(p.add(vec2(.02, .56)), vec2(1.32, .5), C('#c96a54'));
-    drawRect(p.add(vec2(.02, .6)),  vec2(1.24, .4), C('#d97b64'));
-    drawRect(p.add(vec2(.58, .48)), vec2(.42, .34), C('#c96a54'));   // «нос» ниже
-    // решётка радиатора + фара
-    drawRect(p.add(vec2(.79, .46)), vec2(.09, .3), C('#5a3228'));
-    for (let i = 0; i < 3; i++) drawLine(p.add(vec2(.73, .37 + i * .1)), p.add(vec2(.85, .37 + i * .1)), .02, C('#8a5a3c'));
-    drawCircle(p.add(vec2(.74, .64)), .06, C('#f6e08a'));
-    drawCircle(p.add(vec2(.74, .64)), .03, C('#fff4c2'));
-    // крыло над задним колесом
-    drawRect(p.add(vec2(-.5, .58)), vec2(.66, .12), C('#a4503c'));
-    // кабина: рама, стекло, крыша
-    drawRect(p.add(vec2(-.34, .98)), vec2(.66, .56), C('#b85c48'));
-    drawRect(p.add(vec2(-.34, 1.02)), vec2(.5, .42), C('#bfe0ea'));
-    drawLine(p.add(vec2(-.34, .82)), p.add(vec2(-.34, 1.24)), .03, C('#9ec4d0'));
-    drawRect(p.add(vec2(-.34, 1.32)), vec2(.8, .11), C('#8a4032'));
-    // выхлопная труба + дымок
-    drawRect(p.add(vec2(.42, 1.04)), vec2(.08, .52), C('#6b5748'));
-    drawCircle(p.add(vec2(.42, 1.3)), .07, C('#5a4a3c'));
-    if (Math.random() < .3) pops.push({ p: p.add(vec2(.42, 1.42)), v: vec2(.15, .9), col: '#d9d4c8', t: .8, r: .1 });
+    const sp = 1.2 * timeDelta;
+    e.p = e.p.add(vec2(Math.sign(e.t.x - e.p.x) * Math.min(sp, Math.abs(e.t.x - e.p.x)),
+                       Math.sign(e.t.y - e.p.y) * Math.min(sp, Math.abs(e.t.y - e.p.y))));
+    push(0, -home.y / IH, () => drawStall(home), .02);      // прилавок статичен
+    push(0, -e.p.y / IH, () => drawSellerMeeple(e), .3);    // продавец ходит
+}
+function drawStall(o) {
+    drawEllipse(o.add(vec2(0, -.02)), vec2(1.15, .24), SHADOW);
+    drawRect(o.add(vec2(-.66, .14)), vec2(.1, .3), C('#8a6749'));      // ножки
+    drawRect(o.add(vec2(.66, .14)), vec2(.1, .3), C('#8a6749'));
+    drawRect(o.add(vec2(0, .3)), vec2(1.5, .42), C('#a9835c'));        // тумба
+    drawRect(o.add(vec2(0, .54)), vec2(1.56, .14), C('#c9a06a'));      // столешница
+    drawRect(o.add(vec2(-.68, 1.02)), vec2(.08, .95), C('#8a6749'));   // стойки навеса
+    drawRect(o.add(vec2(.68, 1.02)), vec2(.08, .95), C('#8a6749'));
+    for (let i = -3; i <= 3; i++) drawRect(o.add(vec2(i * .23, 1.52)), vec2(.23, .3), C(i % 2 ? '#e2725a' : '#f6efdf'));  // полосатый навес
+    drawRect(o.add(vec2(0, 1.64)), vec2(1.66, .1), C('#c95a48'));
+    // ящик с урожаем на прилавке
+    drawRect(o.add(vec2(-.42, .72)), vec2(.36, .26), C('#b58048'));
+    drawCircle(o.add(vec2(-.5, .8)), .075, C('#e2503a')); drawCircle(o.add(vec2(-.36, .82)), .075, C('#e8923a'));
+    drawCircle(o.add(vec2(-.43, .9)), .07, C('#8fce5f'));
+    // монетка-ценник
+    drawCircle(o.add(vec2(.5, .84)), .13, C('#f0c95e')); drawCircle(o.add(vec2(.5, .84)), .08, C('#e0ae3f'));
+}
+function drawSellerMeeple(e) {
+    const bob = Math.abs(Math.sin(time * 5 + e.ph)) * .04;
+    const p = e.p.add(vec2(0, bob)), shirt = '#6fae7a';
+    drawEllipse(e.p.add(vec2(0, -.02)), vec2(.3, .1), SHADOW);
+    drawEllipse(p.add(vec2(-.22, .28)), vec2(.08, .14), D(shirt, .85), .4);   // ручки
+    drawEllipse(p.add(vec2(.22, .28)), vec2(.08, .14), D(shirt, .85), -.4);
+    drawEllipse(p.add(vec2(0, .3)), vec2(.26, .32), C(shirt));                // фартук-корпус
+    drawEllipse(p.add(vec2(0, .27)), vec2(.12, .2), D(shirt, 1.12));          // карман фартука
+    drawCircle(p.add(vec2(0, .62)), .25, C('#f6d7b2'));                       // голова
+    drawEllipse(p.add(vec2(0, .77)), vec2(.28, .13), C('#e2725a'));           // бандана
+    drawCircle(p.add(vec2(-.08, .62)), .032, C('#4a3b2e'));
+    drawCircle(p.add(vec2(.08, .62)), .032, C('#4a3b2e'));
+    drawCircle(p.add(vec2(-.15, .55)), .045, new Color(.95, .66, .6, .55));
+    drawCircle(p.add(vec2(.15, .55)), .045, new Color(.95, .66, .6, .55));
 }
 
 // ---------- Табличка зоны ----------
