@@ -688,21 +688,27 @@ function drawCropArt(o, ci, s) {
             drawEllipse(b.add(vec2(-.02, .12)), vec2(.12 * s, .11 * s), body);
             drawEllipse(b.add(vec2(-.05, .15)), vec2(.045 * s, .03 * s), new Color(1, 1, 1, .45)); }
         break; }
-    case 'potato': {                                 // клубни статичны, ботва качается
+    case 'potato': {                                 // клубни ПОД землёй — видно только ботву
         const sw = wind * .05;
-        drawEllipse(o.add(vec2(-.3, .1)), vec2(.16 * s, .12 * s), D(c.hue, .85));
-        drawEllipse(o.add(vec2(.28, .08)), vec2(.17 * s, .12 * s), C(c.hue));
-        drawEllipse(o.add(vec2(-.33, .12)), vec2(.04 * s, .03 * s), new Color(1, 1, 1, .3));
-        drawEllipse(o.add(vec2(-.02 + sw, .36 * s)), vec2(.48 * s, .34 * s), C('#7fae5c'));
-        drawEllipse(o.add(vec2(-.16 + sw, .42 * s)), vec2(.24 * s, .2 * s), C('#8fc167'));
-        drawEllipse(o.add(vec2(.16 + sw, .46 * s)), vec2(.22 * s, .18 * s), C('#9ccb74'));
+        drawLine(o.add(vec2(-.04, .02)), o.add(vec2(-.12 + sw, .5 * s)), .045, C('#5f9e4a'));
+        drawLine(o.add(vec2(.04, .02)), o.add(vec2(.14 + sw, .46 * s)), .045, C('#5f9e4a'));
+        drawEllipse(o.add(vec2(sw, .32 * s)), vec2(.42 * s, .3 * s), C('#5f9e4a'));
+        drawEllipse(o.add(vec2(-.22 + sw, .4 * s)), vec2(.2 * s, .16 * s), C('#72b25a'));
+        drawEllipse(o.add(vec2(.22 + sw, .42 * s)), vec2(.2 * s, .16 * s), C('#72b25a'));
+        drawEllipse(o.add(vec2(sw * .6, .5 * s)), vec2(.24 * s, .2 * s), C('#86c46b'));
+        for (const [lx, ly, a] of [[-.38, .3, .5], [.38, .32, -.5], [-.16, .56, .3], [.18, .54, -.3]])
+            drawEllipse(o.add(vec2(lx + sw, ly * s)), vec2(.13 * s, .07 * s), C('#5f9e4a'), a);
+        for (const [fx, fy] of [[-.12, .48], [.15, .52]]) { const b = o.add(vec2(fx + sw, fy * s));  // цветки картофеля
+            drawCircle(b, .04 * s, new Color(1, 1, 1, .9)); drawCircle(b, .018 * s, C('#f0c95e')); }
         break; }
-    case 'cabbage':                                  // круглый слоёный кочан, низ в земле
-        drawEllipse(o.add(vec2(-.34 * s, .24 * s)), vec2(.2 * s, .32 * s), C(c.top));
-        drawEllipse(o.add(vec2(.34 * s, .24 * s)), vec2(.2 * s, .32 * s), C(c.top));
-        blob(o, 0, .28 * s, .44 * s, .38 * s, c.hue);
-        drawEllipse(o.add(vec2(.02, .34 * s)), vec2(.28 * s, .24 * s), D(c.top, 1.05));
-        drawEllipse(o.add(vec2(-.04, .44 * s)), vec2(.18 * s, .14 * s), new Color(1, 1, 1, .22));
+    case 'cabbage':                                  // круглый кочан с прожилками, низ в земле
+        drawEllipse(o.add(vec2(-.34 * s, .2 * s)), vec2(.22 * s, .16 * s), C(c.top), .5);   // внешние листья
+        drawEllipse(o.add(vec2(.34 * s, .2 * s)), vec2(.22 * s, .16 * s), C(c.top), -.5);
+        blob(o, 0, .3 * s, .42 * s, .4 * s, c.hue);                                          // шар-кочан
+        for (const dx of [-.24, -.09, .09, .24])                                             // прожилки листьев
+            drawLine(o.add(vec2(dx * s, .6 * s)), o.add(vec2(dx * .45 * s, .08 * s)), .028, D(c.hue, .82));
+        drawEllipse(o.add(vec2(0, .34 * s)), vec2(.2 * s, .22 * s), D(c.top, 1.05));         // светлая сердцевина
+        drawEllipse(o.add(vec2(-.06, .44 * s)), vec2(.11 * s, .09 * s), new Color(1, 1, 1, .25));
         break;
     case 'tomato': {                                 // куст с гроздью помидоров — качается
         const sw = wind * .06;
@@ -722,10 +728,20 @@ function drawCropArt(o, ci, s) {
             drawPoly([vec2(-.06, 0), vec2(.06, 0), vec2(0, .11)], C('#4f9444'), 0, undefined, b.add(vec2(0, tr * s)));
         }
         break; }
-    case 'cuke': {                                   // плети статичны, кончики чуть колышутся
-        const sw = wind * .04;
-        drawEllipse(o.add(vec2(sw, .36 * s)), vec2(.5 * s, .32 * s), C('#6faf5a'));
-        blob(o, -.3, .1, .3 * s, .12 * s, c.hue); blob(o, .32, .16, .28 * s, .11 * s, c.hue);
+    case 'cuke': {                                   // плети-лианы с огурцами (как помидорный куст)
+        const sw = wind * .05;
+        drawEllipse(o.add(vec2(sw, .34 * s)), vec2(.5 * s, .38 * s), C('#4f8f3f'));          // листва
+        drawEllipse(o.add(vec2(-.26 + sw, .5 * s)), vec2(.22 * s, .18 * s), C('#63a851'));
+        drawEllipse(o.add(vec2(.24 + sw, .5 * s)), vec2(.22 * s, .18 * s), C('#63a851'));
+        drawEllipse(o.add(vec2(sw, .62 * s)), vec2(.24 * s, .2 * s), C('#7cbd63'));
+        drawLine(o.add(vec2(-.4 + sw, .5 * s)), o.add(vec2(-.5 + sw, .7 * s)), .025, C('#5f9e4a'));  // усики
+        drawLine(o.add(vec2(.4 + sw, .5 * s)), o.add(vec2(.52 + sw, .68 * s)), .025, C('#5f9e4a'));
+        for (const [cx, cy, ca] of [[-.24, .24, .5], [.26, .3, -.4], [.03, .13, .15]]) {     // огурцы — вытянутые
+            const b = o.add(vec2(cx + sw * .5, cy * s));
+            drawEllipse(b, vec2(.09 * s, .22 * s), D(c.hue, .8), ca);
+            drawEllipse(b.add(vec2(-.012 * s, .01 * s)), vec2(.072 * s, .2 * s), body, ca);
+            drawEllipse(b.add(vec2(-.02 * s, -.03 * s)), vec2(.02 * s, .09 * s), new Color(1, 1, 1, .35), ca);
+        }
         break; }
     case 'corn': {                                   // высокий стебель качается целиком
         const sw = wind * .06;
