@@ -105,6 +105,12 @@ function initUI() {
     for (const b of document.querySelectorAll('.modal .close2'))
         b.onclick = () => closeModal(b.closest('.modal').id);
 
+    // музыка стартует по первому касанию где угодно (не только по канвасу)
+    const kick = () => { if (booted && !S.mute) startMusic();
+        if (musicOn) { document.removeEventListener('pointerdown', kick, true); document.removeEventListener('keydown', kick, true); } };
+    document.addEventListener('pointerdown', kick, true);
+    document.addEventListener('keydown', kick, true);
+
     setInterval(uiTick, 500);
 }
 function uiTick() {

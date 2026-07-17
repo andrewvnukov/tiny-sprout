@@ -85,9 +85,8 @@ const tractEvery = () => S.workers.tract ? 90 / Math.pow(1.35, S.workers.tract-1
 // ---------- Престиж ----------
 const SEED_BASE = 60000;   // seasonEarned для 1-го семени
 const seedsFromEarned = e => Math.floor(Math.sqrt(e / SEED_BASE));
-const GRAPE_I = CROPS.findIndex(c => c.id === 'grape');
-// престиж открывается только после открытия винограда (навсегда — по альбому)
-const prestigeUnlocked = () => !!(S.disc && S.disc[GRAPE_I]) || S.cnt.prestiges > 0;
+// престиж открывается только после покупки теплицы (последней зоны)
+const prestigeUnlocked = () => S.zones >= ZONES.length || S.cnt.prestiges > 0;
 const pendingSeeds = () => prestigeUnlocked() ? Math.max(0, seedsFromEarned(S.seasonEarned) - S.seasonSeeds) : 0;
 
 // ---------- Заказы ----------

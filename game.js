@@ -470,7 +470,7 @@ PATH_CELLS.push([-2, 5], [-1, 5]);               // от двери дома к 
 const FIELD_CX = -2.84, FIELD_CY = -3.6;          // центр поля (world)
 
 // ---------- Камера: пан + зум (прямые pointer-события, якорные) ----------
-let camX = FIELD_CX, camY = FIELD_CY, camScale = 30, camMin = 14, camMax = 78;
+let camX = FIELD_CX, camY = FIELD_CY, camScale = 30, camMin = 14, camMax = 72;
 function initCamera() {
     const cw = mainCanvasSize.x, ch = mainCanvasSize.y;
     camMin = Math.max(10, Math.min(cw / 30, ch / 20));
@@ -557,7 +557,7 @@ function pickAt(cx, cy) {
     if (best !== null && bd < 1.1) { best === '+' ? buyPlot() : tapPlot(best); return; }
     if (S.zones < ZONES.length) {
         const sp = zoneSignPos(S.zones);
-        if (Math.abs(m.x - sp.x) < 2.4 && m.y > sp.y - .4 && m.y < sp.y + 2) buyZone();
+        if (Math.abs(m.x - sp.x) < 1.7 && m.y > sp.y - .3 && m.y < sp.y + 1.4) buyZone();
     }
 }
 

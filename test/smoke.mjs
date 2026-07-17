@@ -103,8 +103,8 @@ await page.evaluate(() => buyUp('fert'));
 s = await state();
 check('upgrade fert lvl 1', s.up.fert === 1);
 
-// престиж (доступен только после открытия винограда)
-await page.evaluate(() => { const gi = CROPS.findIndex(c=>c.id==='grape'); S.disc[gi] = true; S.seasonEarned = 1e6; });
+// престиж (доступен только после покупки теплицы — последней зоны)
+await page.evaluate(() => { S.zones = ZONES.length; S.seasonEarned = 1e6; });
 s = await state();
 check('prestige pending seeds > 0', s.pendingSeeds > 0);
 await page.evaluate(() => doPrestige());

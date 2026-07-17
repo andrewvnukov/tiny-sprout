@@ -24,8 +24,14 @@ function isoTile(pos, hw, hh, col) {
 }
 
 // ---------- Константы мира ----------
-const PPU = 48;                                   // px на world-единицу в запечённом канвасе
-const WX0 = -35.5, WX1 = 27, WY0 = -18.5, WY1 = 14.5;   // границы запечённого мира (world)
+const PPU = 72;                                   // px на world-единицу в запечённом канвасе (высокое — без пикселей при зуме)
+const WX0 = -35.5, WX1 = 30.5, WY0 = -18.5, WY1 = 14.5; // границы запечённого мира (world)
+// стиль по зонам — новая зона выглядит иначе
+const ZONE_STYLE = [
+    { plate: '#a9c97e', wood: '#c99a5f', woodLo: '#9c7139', woodHi: '#e2ba79', soil: '#7a5334' }, // Поле
+    { plate: '#9ec06a', wood: '#b58048', woodLo: '#875b31', woodHi: '#d3a25e', soil: '#6b4529' }, // Огород
+    { plate: '#bcd6a4', wood: '#cdb389', woodLo: '#a3895f', woodHi: '#ecd9b0', soil: '#67503a' }, // Теплица
+];
 const TILE_GX0 = -10, TILE_GX1 = 10, TILE_GY0 = -8, TILE_GY1 = 14;
 const BED_DEP = .34;                              // высота короба грядки (world)
 const BLD = { half: 2, foot: .3, wall: 2.0, roof: 1.8 }; // постройка: 2×2 клетки, размеры в world
@@ -35,6 +41,12 @@ const PADDOCK = {
     hen:   { x0: -3.4, x1: -1.7, y0: 8.2, y1: 9.9 },
     cow:   { x0: -0.2, x1: 2.1,  y0: 9.2, y1: 11.0 },
     sheep: { x0: 3.0,  x1: 5.3,  y0: 9.2, y1: 11.0 },
+};
+// вид забора по типу (hW/pwW — в world-единицах; используется и для запечки, и для динамики)
+const PEN_LOOK = {
+    hen:   { railsN: [.72],    rail: '#efe4cb', post: '#efe4cb', cap: '#e7d9b8', hW: .30, pwW: .05 },
+    cow:   { railsN: [.4, .82], rail: '#a97f48', post: '#8a6238', cap: null,     hW: .42, pwW: .07 },
+    sheep: { railsN: [.6],     rail: '#c9b393', post: '#b8935c', cap: '#d9c8a8', hW: .34, pwW: .06 },
 };
 // точка дыма над трубой дома (world)
 function chimneyPos() {
@@ -157,13 +169,12 @@ function buildWorld() {
         x.fillStyle = g; x.beginPath(); x.arc(s.x, s.y, 230 * z, 0, 7); x.fill();
     }
 
-    // ---------- участки зон (плиты под грядки) ----------
+    // ---------- участки зон (плиты под грядки, каждая зона своего вида) ----------
     for (let zi = 0; zi < ZONES.length && zi <= S.zones; zi++) {
         const unlocked = zi < S.zones;
         for (let cx = 0; cx <= 3; cx++) for (let gy = zi * 3; gy <= zi * 3 + 1; gy++) {
             const s = G(cx, gy);
-            rhombus(s.x, s.y, TW * 1.02, TH * 1.02,
-                unlocked ? (zi === 2 ? '#b3d089' : '#a9c97e') : 'rgba(228,234,200,.28)');
+            rhombus(s.x, s.y, TW * 1.02, TH * 1.02, unlocked ? ZONE_STYLE[zi].plate : 'rgba(228,234,200,.28)');
         }
         if (!unlocked) {                            // пунктир «будущего участка»
             const A = G(-.5, zi * 3 - .5), Bc = G(3.5, zi * 3 - .5), Cc = G(3.5, zi * 3 + 1.5), Dd = G(-.5, zi * 3 + 1.5);
@@ -218,28 +229,25 @@ function buildWorld() {
     }
     for (const t of decor.trees) put(t.gx + t.gy, () => tree(t));
 
-    // короб грядки: НИЗ по границе клетки, борта растут вверх
-    function bedBox(gx, gy) {
+    // короб грядки: НИЗ по границе клетки, борта растут вверх; цвет — по зоне
+    function bedBox(gx, gy, zi) {
+        const zs = ZONE_STYLE[zi] || ZONE_STYLE[0];
         const s = G(gx, gy), w = TW * .99, h = TH * .99, dep = BED_DEP * PPU;
         const L = { x: s.x - w, y: s.y }, B = { x: s.x, y: s.y + h }, R = { x: s.x + w, y: s.y }, Tt = { x: s.x, y: s.y - h };
         softShadow(s.x, s.y + h * .5, w * 1.12, h * .8, .15);
-        // боковые доски (вверх от границы клетки)
-        quad(L, B, { x: B.x, y: B.y - dep }, { x: L.x, y: L.y - dep }, COL.woodLo);
-        quad(B, R, { x: R.x, y: R.y - dep }, { x: B.x, y: B.y - dep }, COL.wood);
+        quad(L, B, { x: B.x, y: B.y - dep }, { x: L.x, y: L.y - dep }, zs.woodLo);
+        quad(B, R, { x: R.x, y: R.y - dep }, { x: B.x, y: B.y - dep }, zs.wood);
         x.strokeStyle = COL.woodSeam; x.lineWidth = 1.2 * z;
         for (let i = 1; i < 4; i++) {
             const t = i / 4, p1 = lerp(L, B, t), p2 = lerp(B, R, t);
             seg(p1.x, p1.y - dep * .12, p1.x, p1.y - dep * .88);
             seg(p2.x, p2.y - dep * .12, p2.x, p2.y - dep * .88);
         }
-        // верхняя рамка
-        rhombus(s.x, s.y - dep, w, h, COL.woodHi);
-        // угловые столбики
-        x.fillStyle = COL.woodLo;
+        rhombus(s.x, s.y - dep, w, h, zs.woodHi);
+        x.fillStyle = zs.woodLo;
         for (const c of [L, B, R]) x.fillRect(c.x - 2.3 * z, c.y - dep - 3.4 * z, 4.6 * z, dep + 4.4 * z);
         x.fillRect(Tt.x - 2.3 * z, Tt.y - dep - 3.4 * z, 4.6 * z, dep + 3.4 * z);
-        // земля с крошкой и бороздами
-        rhombus(s.x, s.y - dep, w * .74, h * .74, COL.soil);
+        rhombus(s.x, s.y - dep, w * .74, h * .74, zs.soil);
         x.fillStyle = COL.soilHi;
         for (let i = 0; i < 12; i++) {
             const a = rnd(gx * 7 + i) - .5, b = rnd(gy * 9 + i * 2) - .5;
@@ -251,8 +259,14 @@ function buildWorld() {
             const ox = w * k * .22, oy = -h * k * .22;
             seg(s.x + ox - w * .32, s.y - dep + oy - h * .32, s.x + ox + w * .32, s.y - dep + oy + h * .32);
         }
+        // теплица: лёгкие «арки» над грядкой — визуально отличает зону
+        if (zi === 2) {
+            x.strokeStyle = 'rgba(150,205,220,.5)'; x.lineWidth = 1.6 * z;
+            const top = { x: s.x, y: s.y - dep - 20 * z };
+            x.beginPath(); x.moveTo(L.x + 4 * z, L.y - dep); x.quadraticCurveTo(top.x, top.y, R.x - 4 * z, R.y - dep); x.stroke();
+        }
     }
-    for (let i = 0; i < S.plots.length; i++) { const g = plotGrid(i); put(g.gx + g.gy, () => bedBox(g.gx, g.gy)); }
+    for (let i = 0; i < S.plots.length; i++) { const g = plotGrid(i); put(g.gx + g.gy, () => bedBox(g.gx, g.gy, Math.floor(i / 8))); }
 
     // постройка 2×2 клетки: низ ромба точно по линиям сетки
     function bldg(g, isBarn) {
@@ -427,11 +441,17 @@ function buildWorld() {
             x.fillStyle = o.post; x.fillRect(px - o.pw, py - o.h, o.pw * 2, o.h);
             if (o.cap) { x.fillStyle = o.cap; ell(px, py - o.h, o.pw * 1.3, o.pw); } }
     }
-    function penFences(pd, o) {
-        const A = G(pd.x0, pd.y0), B = G(pd.x1, pd.y0), Cc = G(pd.x1, pd.y1), Dd = G(pd.x0, pd.y1);
+    function penFencesBack(pd, o) {                             // только задние рёбра (до строений)
+        const A = G(pd.x0, pd.y0), B = G(pd.x1, pd.y0), Dd = G(pd.x0, pd.y1);
         const nx = Math.max(2, Math.round((pd.x1 - pd.x0) * 2.2)), ny = Math.max(2, Math.round((pd.y1 - pd.y0) * 2.2));
-        fenceRun(A, B, o, nx); fenceRun(A, Dd, o, ny);          // задние рёбра
-        fenceRun(Dd, Cc, o, nx); fenceRun(B, Cc, o, ny);        // передние рёбра
+        fenceRun(A, B, o, nx); fenceRun(A, Dd, o, ny);
+    }
+    function penDo(id, groundFill, structFn) {
+        const pd = PADDOCK[id], lk = PEN_LOOK[id];
+        const o = { h: lk.hW * PPU, rails: lk.railsN, rail: lk.rail, post: lk.post, pw: lk.pwW * PPU, cap: lk.cap };
+        penGround(pd, groundFill);
+        penFencesBack(pd, o);                                   // задний забор — за строением
+        structFn(pd);                                          // курятник/корыто поверх заднего забора
     }
     function coop(pd) {                                          // курятник
         const c = G(pd.x0 + .55, pd.y0 + .62), cw = TW * .52, ch = TH * .52, wallH = 23 * z, roofH = 16 * z;
@@ -472,18 +492,10 @@ function buildWorld() {
         x.fillStyle = '#e88ba4'; ell(b.x + 3 * z, b.y - 8 * z, 2 * z, 2 * z);
         x.fillStyle = '#f2d98a'; ell(b.x - 2 * z, b.y - 4 * z, 1.8 * z, 1.8 * z);
     }
-    if (S.animals.hen > 0) put(PADDOCK.hen.x1 + PADDOCK.hen.y1, () => {
-        penGround(PADDOCK.hen, '#cdbd93'); coop(PADDOCK.hen);
-        penFences(PADDOCK.hen, { h: 15 * z, rails: [.72], rail: '#efe4cb', post: '#efe4cb', pw: 1.5 * z, cap: '#e7d9b8' });
-    });
-    if (S.animals.cow > 0) put(PADDOCK.cow.x1 + PADDOCK.cow.y1, () => {
-        penGround(PADDOCK.cow, '#a7c56e'); trough(PADDOCK.cow, true); hayBale(PADDOCK.cow);
-        penFences(PADDOCK.cow, { h: 20 * z, rails: [.4, .82], rail: '#a97f48', post: '#8a6238', pw: 2.2 * z });
-    });
-    if (S.animals.sheep > 0) put(PADDOCK.sheep.x1 + PADDOCK.sheep.y1, () => {
-        penGround(PADDOCK.sheep, '#a7c56e'); trough(PADDOCK.sheep, false); penBush(PADDOCK.sheep);
-        penFences(PADDOCK.sheep, { h: 17 * z, rails: [.6], rail: '#c9b393', post: '#b8935c', pw: 1.9 * z, cap: '#d9c8a8' });
-    });
+    // передний забор рисуется динамически (в renderWorld) — чтобы животные прятались ЗА ним
+    if (S.animals.hen > 0)   put(PADDOCK.hen.x1 + PADDOCK.hen.y1,   () => penDo('hen',   '#cdbd93', pd => coop(pd)));
+    if (S.animals.cow > 0)   put(PADDOCK.cow.x1 + PADDOCK.cow.y1,   () => penDo('cow',   '#a7c56e', pd => { trough(pd, true); hayBale(pd); }));
+    if (S.animals.sheep > 0) put(PADDOCK.sheep.x1 + PADDOCK.sheep.y1, () => penDo('sheep', '#a7c56e', pd => { trough(pd, false); penBush(pd); }));
 
     items.sort((a, b) => a.d - b.d);
     for (const it of items) it.fn();
@@ -525,9 +537,16 @@ function renderWorld() {
     const L = tl.x, Rt = br.x, T = tl.y, B = br.y;              // T>B (y вверх)
     drawRect(vec2((L + Rt) / 2, (T + B) / 2), vec2(Rt - L + 2, T - B + 2), C('#9cc06a'));
 
-    // статичный мир — один drawImage
-    const a = worldToScreen(vec2(WX0, WY1)), b = worldToScreen(vec2(WX1, WY0));
-    mainContext.drawImage(worldCanvas, a.x, a.y, b.x - a.x, b.y - a.y);
+    // статичный мир: рисуем ТОЛЬКО видимый кусок запечённого канваса
+    // (иначе на большом PPU семплинг всего атласа роняет fps)
+    mainContext.imageSmoothingEnabled = true;
+    const cx0 = Math.max(WX0, L), cx1 = Math.min(WX1, Rt);
+    const cy0 = Math.max(WY0, B), cy1 = Math.min(WY1, T);
+    if (cx1 > cx0 && cy1 > cy0) {
+        const sx = (cx0 - WX0) * PPU, sy = (WY1 - cy1) * PPU, sw = (cx1 - cx0) * PPU, sh = (cy1 - cy0) * PPU;
+        const d0 = worldToScreen(vec2(cx0, cy1)), d1 = worldToScreen(vec2(cx1, cy0));
+        mainContext.drawImage(worldCanvas, sx, sy, sw, sh, d0.x, d0.y, d1.x - d0.x, d1.y - d0.y);
+    }
 
     // облака
     for (const c of decor.clouds) {
@@ -564,12 +583,29 @@ function renderWorld() {
     if (S.zones < ZONES.length) { const g = zoneCenterGrid(S.zones); push(g.gx, g.gy, () => drawZoneSign(S.zones), .5); }
     pushAnimals(push);
     pushWorkers(push);
+    // передний забор загонов — поверх животных (они прячутся за ним)
+    for (const id of ['hen', 'cow', 'sheep'])
+        if (S.animals[id] > 0) { const pd = PADDOCK[id]; push(pd.x1, pd.y1, () => drawPenFront(id), .06); }
 
     items.sort((a, b) => a.d - b.d);
     for (const it of items) it.fn();
 
     drawTractor();
     drawParticles();
+}
+
+// передний забор загона (world-координаты) — динамика для корректной перекрытия
+function drawPenFront(id) {
+    const pd = PADDOCK[id], lk = PEN_LOOK[id];
+    const cc = isoWorld(pd.x1, pd.y1), dd = isoWorld(pd.x0, pd.y1), bb = isoWorld(pd.x1, pd.y0);
+    const edge = (aa, bx, n) => {
+        for (const rh of lk.railsN) drawLine(aa.add(vec2(0, lk.hW * rh)), bx.add(vec2(0, lk.hW * rh)), .05, C(lk.rail));
+        for (let i = 0; i <= n; i++) { const p = aa.add(bx.subtract(aa).scale(i / n));
+            drawRect(p.add(vec2(0, lk.hW * .5)), vec2(lk.pwW * 2, lk.hW), C(lk.post));
+            if (lk.cap) drawCircle(p.add(vec2(0, lk.hW)), lk.pwW * 1.35, C(lk.cap)); }
+    };
+    const nx = Math.max(2, Math.round((pd.x1 - pd.x0) * 2.2)), ny = Math.max(2, Math.round((pd.y1 - pd.y0) * 2.2));
+    edge(dd, cc, nx); edge(bb, cc, ny);
 }
 
 // ---------- Грядки: динамика (культуры) ----------
@@ -583,9 +619,8 @@ function drawGhostPlot(idx) {
 }
 function drawCrop(pos, p) {
     const c = CROPS[p.c], gt = cropGrow(c), k = Math.min(1, p.t / gt), ready = k >= 1;
-    const bob = ready ? Math.sin(time * 3 + pos.x) * .05 : 0;
-    const o = pos.add(vec2(0, BED_DEP + bob));      // растение на ВЕРХУ короба
-    if (k < .35) { drawMound(o, .42); drawSprout(o, k); }
+    const o = pos.add(vec2(0, BED_DEP));            // растение статично сидит на грядке
+    if (k < .35) drawSprout(o, k);
     else drawCropArt(o, p.c, .45 + .55 * k);
     if (p.g && k > .3) {
         const tw = .5 + Math.sin(time * 5 + pos.x * 2) * .5;
@@ -632,45 +667,36 @@ function blob(o, dx, dy, rx, ry, base) {
     drawEllipse(o.add(vec2(dx - rx * .08, dy + ry * .12)), vec2(rx * .88, ry * .85), C(base));
     drawEllipse(o.add(vec2(dx - rx * .3, dy + ry * .4)), vec2(rx * .24, ry * .16), new Color(1, 1, 1, .35));
 }
-// холмик почвы позади растения
-function drawMound(o, w) {
-    drawEllipse(o.add(vec2(0, .07)), vec2(w, w * .34), C('#5f4126'));
-    drawEllipse(o.add(vec2(0, .11)), vec2(w * .82, w * .26), C('#77522f'));
-}
-// передняя кромка почвы — растение наполовину «сидит» в земле
-function drawSoilLip(o, w) {
-    drawEllipse(o.add(vec2(0, .02)), vec2(w, .12), C('#6b4a2a'));
-    drawEllipse(o.add(vec2(-.05 * w, .05)), vec2(w * .82, .09), C('#835a34'));
-    drawEllipse(o.add(vec2(.3 * w, .0)), vec2(.05, .03), C('#946640'));
-    drawEllipse(o.add(vec2(-.32 * w, .04)), vec2(.045, .028), C('#946640'));
-}
 function drawCropArt(o, ci, s) {
     const c = CROPS[ci], top = C(c.top), body = C(c.hue);
-    drawMound(o, .5 * s + .08);
+    const wind = Math.sin(time * 1.5 + o.x * 2.2);   // лёгкий ветер — только для ботвы/стеблей
     switch (c.id) {
-    case 'wheat':
-        for (let k = -2; k <= 2; k++) { const xx = k * .24, hgt = (.72 + Math.abs(k) * .05) * s;
-            drawLine(o.add(vec2(xx, .04)), o.add(vec2(xx + .05, hgt)), .05, C('#cdb162'));
-            drawEllipse(o.add(vec2(xx + .05, hgt)), vec2(.1 * s, .2 * s), D(c.hue, .85));
-            drawEllipse(o.add(vec2(xx + .03, hgt + .03)), vec2(.08 * s, .17 * s), body); }
-        break;
-    case 'carrot':                                   // округлые «плечи» из земли + пышные фронды
+    case 'wheat': {                                  // высокие колосья качаются целиком
+        const sw = wind * .06;
+        for (let k = -2; k <= 2; k++) { const xx = k * .24, hgt = (.72 + Math.abs(k) * .05) * s, tip = xx + .05 + sw * hgt;
+            drawLine(o.add(vec2(xx, .04)), o.add(vec2(tip, hgt)), .05, C('#cdb162'));
+            drawEllipse(o.add(vec2(tip, hgt)), vec2(.1 * s, .2 * s), D(c.hue, .85));
+            drawEllipse(o.add(vec2(tip - .02, hgt + .03)), vec2(.08 * s, .17 * s), body); }
+        break; }
+    case 'carrot': {                                 // корнеплод статичен, ботва качается
+        const sw = wind * .08;
         for (let k = -1; k <= 1; k++) { const b = o.add(vec2(k * .34, 0));
-            drawLine(b.add(vec2(0, .06)), b.add(vec2(-.13, .52 * s)), .05, top);
-            drawLine(b.add(vec2(0, .06)), b.add(vec2(.12, .47 * s)), .05, D(c.top, .9));
-            drawLine(b.add(vec2(0, .06)), b.add(vec2(-.01, .56 * s)), .05, top);
+            drawLine(b.add(vec2(0, .06)), b.add(vec2(-.13 + sw, .52 * s)), .05, top);
+            drawLine(b.add(vec2(0, .06)), b.add(vec2(.12 + sw, .47 * s)), .05, D(c.top, .9));
+            drawLine(b.add(vec2(0, .06)), b.add(vec2(-.01 + sw, .56 * s)), .05, top);
             drawEllipse(b.add(vec2(0, .09)), vec2(.16 * s, .15 * s), D(c.hue, .8));
             drawEllipse(b.add(vec2(-.02, .12)), vec2(.12 * s, .11 * s), body);
             drawEllipse(b.add(vec2(-.05, .15)), vec2(.045 * s, .03 * s), new Color(1, 1, 1, .45)); }
-        break;
-    case 'potato':                                   // куст сверху, клубни выглядывают из земли
-        drawEllipse(o.add(vec2(-.02, .36 * s)), vec2(.48 * s, .34 * s), C('#7fae5c'));
-        drawEllipse(o.add(vec2(-.16, .42 * s)), vec2(.24 * s, .2 * s), C('#8fc167'));
-        drawEllipse(o.add(vec2(.16, .46 * s)), vec2(.22 * s, .18 * s), C('#9ccb74'));
+        break; }
+    case 'potato': {                                 // клубни статичны, ботва качается
+        const sw = wind * .05;
         drawEllipse(o.add(vec2(-.3, .1)), vec2(.16 * s, .12 * s), D(c.hue, .85));
         drawEllipse(o.add(vec2(.28, .08)), vec2(.17 * s, .12 * s), C(c.hue));
         drawEllipse(o.add(vec2(-.33, .12)), vec2(.04 * s, .03 * s), new Color(1, 1, 1, .3));
-        break;
+        drawEllipse(o.add(vec2(-.02 + sw, .36 * s)), vec2(.48 * s, .34 * s), C('#7fae5c'));
+        drawEllipse(o.add(vec2(-.16 + sw, .42 * s)), vec2(.24 * s, .2 * s), C('#8fc167'));
+        drawEllipse(o.add(vec2(.16 + sw, .46 * s)), vec2(.22 * s, .18 * s), C('#9ccb74'));
+        break; }
     case 'cabbage':                                  // круглый слоёный кочан, низ в земле
         drawEllipse(o.add(vec2(-.34 * s, .24 * s)), vec2(.2 * s, .32 * s), C(c.top));
         drawEllipse(o.add(vec2(.34 * s, .24 * s)), vec2(.2 * s, .32 * s), C(c.top));
@@ -678,23 +704,26 @@ function drawCropArt(o, ci, s) {
         drawEllipse(o.add(vec2(.02, .34 * s)), vec2(.28 * s, .24 * s), D(c.top, 1.05));
         drawEllipse(o.add(vec2(-.04, .44 * s)), vec2(.18 * s, .14 * s), new Color(1, 1, 1, .22));
         break;
-    case 'tomato':                                   // кустик с помидорами
-        drawEllipse(o.add(vec2(0, .42 * s)), vec2(.48 * s, .48 * s), C('#6faf5a'));
-        drawEllipse(o.add(vec2(-.2, .58 * s)), vec2(.2 * s, .2 * s), C('#7fbf68'));
-        blob(o, -.24, .3 * s, .17 * s, .16 * s, c.hue); blob(o, .26, .46 * s, .17 * s, .16 * s, c.hue); blob(o, .05, .18 * s, .16 * s, .15 * s, c.hue);
-        break;
-    case 'cuke':                                     // плети по земле, огурцы наполовину в почве
-        drawEllipse(o.add(vec2(0, .36 * s)), vec2(.5 * s, .32 * s), C('#6faf5a'));
+    case 'tomato': {                                 // куст качается туда-сюда
+        const sw = wind * .07;
+        drawEllipse(o.add(vec2(sw, .42 * s)), vec2(.48 * s, .48 * s), C('#6faf5a'));
+        drawEllipse(o.add(vec2(-.2 + sw, .58 * s)), vec2(.2 * s, .2 * s), C('#7fbf68'));
+        blob(o, -.24 + sw * .6, .3 * s, .17 * s, .16 * s, c.hue); blob(o, .26 + sw, .46 * s, .17 * s, .16 * s, c.hue); blob(o, .05 + sw * .3, .18 * s, .16 * s, .15 * s, c.hue);
+        break; }
+    case 'cuke': {                                   // плети статичны, кончики чуть колышутся
+        const sw = wind * .04;
+        drawEllipse(o.add(vec2(sw, .36 * s)), vec2(.5 * s, .32 * s), C('#6faf5a'));
         blob(o, -.3, .1, .3 * s, .12 * s, c.hue); blob(o, .32, .16, .28 * s, .11 * s, c.hue);
-        break;
-    case 'corn':                                     // высокий стебель с початком
-        drawLine(o.add(vec2(0, .04)), o.add(vec2(0, .95 * s)), .08, C('#6da057'));
-        drawEllipse(o.add(vec2(-.2, .5 * s)), vec2(.3 * s, .1 * s), C(c.top), .2);
-        drawEllipse(o.add(vec2(.2, .66 * s)), vec2(.3 * s, .1 * s), D(c.top, .9), -.2);
-        drawEllipse(o.add(vec2(.12, .42 * s)), vec2(.17 * s, .32 * s), D(c.hue, .85));
-        drawEllipse(o.add(vec2(.1, .44 * s)), vec2(.14 * s, .28 * s), body);
-        drawEllipse(o.add(vec2(.05, .52 * s)), vec2(.05 * s, .11 * s), new Color(1, 1, 1, .35));
-        break;
+        break; }
+    case 'corn': {                                   // высокий стебель качается целиком
+        const sw = wind * .06;
+        drawLine(o.add(vec2(0, .04)), o.add(vec2(sw, .95 * s)), .08, C('#6da057'));
+        drawEllipse(o.add(vec2(-.2 + sw * .5, .5 * s)), vec2(.3 * s, .1 * s), C(c.top), .2);
+        drawEllipse(o.add(vec2(.2 + sw * .7, .66 * s)), vec2(.3 * s, .1 * s), D(c.top, .9), -.2);
+        drawEllipse(o.add(vec2(.12 + sw * .5, .42 * s)), vec2(.17 * s, .32 * s), D(c.hue, .85));
+        drawEllipse(o.add(vec2(.1 + sw * .5, .44 * s)), vec2(.14 * s, .28 * s), body);
+        drawEllipse(o.add(vec2(.05 + sw * .5, .52 * s)), vec2(.05 * s, .11 * s), new Color(1, 1, 1, .35));
+        break; }
     case 'berry':                                    // низкий кустик с клубникой у земли
         drawEllipse(o.add(vec2(0, .32 * s)), vec2(.54 * s, .3 * s), C('#5fae52'));
         drawEllipse(o.add(vec2(-.24, .42 * s)), vec2(.17 * s, .15 * s), C('#6faf5a'));
@@ -733,7 +762,6 @@ function drawCropArt(o, ci, s) {
         for (let k = -1; k <= 1; k++) drawPoly([vec2(-.07, 0), vec2(.07, 0), vec2(k * .12, .34 * s)], C(c.top), 0, undefined, o.add(vec2(k * .1, .66 * s)));
         break;
     }
-    drawSoilLip(o, .48 * s + .06);
 }
 
 // ---------- Животные (детализированные чиби) ----------
@@ -906,19 +934,19 @@ function drawTractor() {
 // ---------- Табличка зоны ----------
 function drawZoneSign(z) {
     const zone = ZONES[z], base = zoneSignPos(z), y0 = base.y, can = S.coins >= zone.unlock;
-    const p = vec2(base.x, y0 + 1);
-    drawEllipse(vec2(base.x, y0 + .15), vec2(1.5, .28), SHADOW);
-    drawRect(p.add(vec2(0, -.45)), vec2(.2, .9), C('#a9835c'));
-    drawRect(p, vec2(4.6, 1.4), C('#b08a5e'));
-    drawRect(p.add(vec2(0, .06)), vec2(4.6, 1.26), C('#cca87a'));
-    drawRect(p.add(vec2(0, .56)), vec2(4.6, .12), C('#dbbb8e'));
-    const lp = p.add(vec2(-1.72, .22));
-    drawCircle(lp.add(vec2(0, .14)), .3, new Color(0, 0, 0, 0), .07, C('#8a6749'));
-    drawRect(lp, vec2(.4, .34), C('#8a6749'));
-    drawCircle(lp.add(vec2(0, .02)), .09, C('#cca87a'));
-    drawText(zone.name, p.add(vec2(.35, .3)), .5, C(INKT));
-    drawCoin(p.add(vec2(-.75 - fmt(zone.unlock).length * .12, -.34)), .32);
-    drawText(fmt(zone.unlock), p.add(vec2(.25, -.3)), .42, can ? C('#4e7e3e') : C('#b0604a'));
+    const p = vec2(base.x, y0 + .8);                 // компактная табличка, не мозолит глаза
+    drawEllipse(vec2(base.x, y0 + .1), vec2(1, .2), SHADOW);
+    drawRect(p.add(vec2(0, -.32)), vec2(.14, .64), C('#a9835c'));
+    drawRect(p, vec2(3.0, .92), C('#b08a5e'));
+    drawRect(p.add(vec2(0, .05)), vec2(2.9, .82), C('#cca87a'));
+    drawRect(p.add(vec2(0, .38)), vec2(2.9, .08), C('#dbbb8e'));
+    const lp = p.add(vec2(-1.12, .16));
+    drawCircle(lp.add(vec2(0, .1)), .2, new Color(0, 0, 0, 0), .05, C('#8a6749'));
+    drawRect(lp, vec2(.27, .23), C('#8a6749'));
+    drawCircle(lp.add(vec2(0, .01)), .06, C('#cca87a'));
+    drawText(zone.name, p.add(vec2(.24, .2)), .34, C(INKT));
+    drawCoin(p.add(vec2(-.5 - fmt(zone.unlock).length * .09, -.24)), .22);
+    drawText(fmt(zone.unlock), p.add(vec2(.18, -.21)), .3, can ? C('#4e7e3e') : C('#b0604a'));
 }
 
 // ---------- Частицы, всплывашки, бабочки ----------
