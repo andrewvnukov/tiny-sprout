@@ -36,6 +36,7 @@ function freshState() {
         cnt: { harvests:0, sold:0, planted:0, orders:0, taps:0, aprods:0, goldens:0, prestiges:0,
                cropsAll:0, plotsAll:0, animAll:0 },
         boostUntil: 0, adGrowAt: 0,
+        sfxVol: .5, musVol: .5,     // громкость эффектов и музыки (0..1, 0.5 = базовая)
         time: Date.now(),
     };
 }
@@ -542,7 +543,7 @@ function onDown(e) {
     _ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (_ptrs.size === 1) { _tapId = e.pointerId; _tapMoved = 0; }
     else { _tapId = null; if (_ptrs.size === 2) _pinchDist = twoDist(); }
-    if (booted && !S.mute && !musicOn) startMusic();
+    if (booted && !musicOn) startMusic();
 }
 function onMove(e) {
     const p = _ptrs.get(e.pointerId); if (!p) return;
@@ -652,7 +653,7 @@ window.advanceTime = ms => { simulate(ms/1000); renderHud(); };
 // ---------- Загрузка ----------
 function boot(raw) {
     S = restore(raw);
-    setSoundVolume(S.mute ? 0 : .3);
+    setSoundVolume(1);   // мастер фиксирован; громкости масштабируем в sfx()/музыке
     ensureOrders();
     ensureQuests();
     booted = true;

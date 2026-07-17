@@ -200,6 +200,22 @@ button { font-family:inherit; color:var(--ink); }
 @keyframes glow { 0%,100% { box-shadow:0 3px 0 var(--edge), var(--shadow); } 50% { box-shadow:0 3px 0 var(--edge), 0 0 12px rgba(239,199,95,.7); } }
 @keyframes chipPop { 0% { transform:scale(1); } 40% { transform:scale(1.12); } 100% { transform:scale(1); } }
 @media (prefers-reduced-motion: reduce) { .fab .fico, .badge, .bbtn.on, .chip.pop { animation:none !important; } }
+
+/* ---------- настройки звука ---------- */
+.sndRow { display:flex; align-items:center; gap:12px; margin:12px 4px; }
+.sndRow > span { flex:0 0 82px; text-align:left; font-weight:800; font-size:14px; }
+.sndRow input[type=range] { flex:1; -webkit-appearance:none; appearance:none; height:8px; border-radius:6px;
+    background:var(--cream); outline:none; }
+.sndRow input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:24px; height:24px;
+    border-radius:50%; background:var(--green); border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
+.sndRow input[type=range]::-moz-range-thumb { width:24px; height:24px; border-radius:50%; background:var(--green);
+    border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
+
+/* ---------- подсказка HUD ---------- */
+.hudtip { position:fixed; z-index:60; max-width:210px; background:rgba(75,60,44,.95); color:#fdf8ec;
+    padding:9px 12px; border-radius:14px; font-size:12.5px; line-height:1.35; box-shadow:0 4px 14px rgba(50,38,26,.35);
+    opacity:0; transform:translateY(-4px); transition:opacity .18s, transform .18s; pointer-events:none; }
+.hudtip.show { opacity:1; transform:translateY(0); }
 </style>
 </head>
 <body>
@@ -211,8 +227,9 @@ button { font-family:inherit; color:var(--ink); }
     <div class="chip" id="ipsChip"><span class="fico" data-ico="ips"></span><b id="ipsVal">0/с</b></div>
 </div>
 <div class="topright ui">
-    <button class="icoBtn" id="muteBtn"></button>
+    <button class="icoBtn" id="muteBtn"><span class="fico" data-ico="settings"></span></button>
 </div>
+<div class="hudtip" id="hudTip"></div>
 
 <div class="fabs ui">
     <button class="fab" id="barnFab"><span class="fico" data-ico="barn"></span><span class="badge" id="barnBadge" style="display:none">0</span></button>
@@ -282,6 +299,15 @@ button { font-family:inherit; color:var(--ink); }
 </div>
 
 <!-- Модалки -->
+<div class="modal ui" id="soundModal">
+    <div class="mbox">
+        <h2><span class="fico" data-ico="settings"></span>Звук</h2>
+        <div class="sndRow"><span>Эффекты</span><input type="range" id="sfxSlider" min="0" max="100" step="1" value="50"></div>
+        <div class="sndRow"><span>Музыка</span><input type="range" id="musSlider" min="0" max="100" step="1" value="50"></div>
+        <button class="bbtn close2">Готово</button>
+    </div>
+</div>
+
 <div class="modal ui" id="prestigeModal">
     <div class="mbox">
         <h2><span class="fico" data-ico="star"></span>Новый сезон</h2>

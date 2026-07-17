@@ -819,9 +819,16 @@ function drawHen(p, dir) {
     drawCircle(p.add(vec2(.25 * dir, .43)), .04, new Color(.95, .66, .6, .55));
 }
 function drawCow(p, dir) {
-    for (const ox of [-.3, -.13, .1, .27]) {
-        drawRect(p.add(vec2(ox, .12)), vec2(.1, .24), C('#ece2cd'));
-        drawRect(p.add(vec2(ox, .025)), vec2(.11, .05), C('#8a7460'));
+    // ноги — круглые «капсулы», прикреплены под телом. Вид сбоку: ближняя пара
+    // выражена, дальняя темнее и выше (создаёт глубину), а не 4 квадрата в ряд.
+    for (const ox of [.05, -.11]) {                    // дальняя пара (в глубине)
+        drawLine(p.add(vec2(ox * dir, .27)), p.add(vec2(ox * dir, .1)), .1, C('#d3c4a8'));
+        drawCircle(p.add(vec2(ox * dir, .1)), .053, C('#6f5d4a'));
+    }
+    for (const ox of [.2, -.26]) {                     // ближняя пара
+        drawLine(p.add(vec2(ox * dir, .3)), p.add(vec2(ox * dir, .04)), .125, C('#efe6d2'));
+        drawCircle(p.add(vec2(ox * dir, .3)), .062, C('#efe6d2'));   // округлый верх у тела
+        drawCircle(p.add(vec2(ox * dir, .04)), .066, C('#8a7460'));  // округлое копыто
     }
     // хвостик — короткий, прижат к боку
     drawLine(p.add(vec2(-.46 * dir, .44)), p.add(vec2(-.56 * dir, .26)), .035, C('#ece2cd'));
@@ -850,7 +857,11 @@ function drawCow(p, dir) {
     drawCircle(p.add(vec2(.52 * dir, .53)), .04, new Color(.95, .66, .6, .5));
 }
 function drawSheep(p, dir) {
-    for (const ox of [-.18, .18]) drawRect(p.add(vec2(ox, .08)), vec2(.09, .16), C('#c9b8a4'));
+    // ноги — круглые «капсулы» с копытцем, а не квадраты
+    for (const ox of [.16, -.16]) {
+        drawLine(p.add(vec2(ox, .2)), p.add(vec2(ox, .02)), .085, C('#c9b8a4'));
+        drawCircle(p.add(vec2(ox, .02)), .05, C('#8a7460'));
+    }
     for (const [x, y, r] of [[-.24, .32, .2], [.24, .32, .2], [0, .28, .22], [-.14, .46, .2], [.14, .46, .2], [0, .5, .2]])
         drawCircle(p.add(vec2(x, y)), r * 1.12, C('#f2ecdd'));
     drawCircle(p.add(vec2(0, .38)), .3, C('#faf6ea'));
@@ -919,16 +930,42 @@ function drawTractor() {
     const gy = tractorRow * 1 + 0.5;
     const gx = -3 + prog * 6;
     const p = isoWorld(gx, gy).add(vec2(0, .1));
-    drawEllipse(p.add(vec2(0, -.05)), vec2(.95, .16), SHADOW);
-    drawRect(p.add(vec2(-.1, .48)), vec2(1.24, .58), C('#c96a54'));
-    drawRect(p.add(vec2(-.12, .54)), vec2(1.16, .42), C('#d97b64'));
-    drawRect(p.add(vec2(.25, .95)), vec2(.62, .48), C('#a4c9cc'));
-    drawRect(p.add(vec2(.25, .97)), vec2(.5, .36), C('#cfe6e6'));
-    drawCircle(p.add(vec2(-.5, .14)), .36, C('#6b5748'));
-    drawCircle(p.add(vec2(-.5, .14)), .16, C('#e7d6b8'));
-    drawCircle(p.add(vec2(.5, .1)), .24, C('#6b5748'));
-    drawCircle(p.add(vec2(.5, .1)), .1, C('#e7d6b8'));
-    if (Math.random() < .3) pops.push({ p: p.add(vec2(-.72, 1.05)), v: vec2(-.3, .8), col: '#d9d4c8', t: .8, r: .1 });
+    drawEllipse(p.add(vec2(0, -.05)), vec2(.98, .16), SHADOW);
+    // заднее большое колесо: шина, обод, диск, ступица, болты
+    drawCircle(p.add(vec2(-.52, .2)), .42, C('#4b4239'));
+    drawCircle(p.add(vec2(-.52, .2)), .34, C('#5c5346'));
+    drawCircle(p.add(vec2(-.52, .2)), .21, C('#e7d6b8'));
+    drawCircle(p.add(vec2(-.52, .2)), .075, C('#b8a37c'));
+    for (let i = 0; i < 6; i++) {
+        const an = i / 6 * 6.283;
+        drawCircle(p.add(vec2(-.52 + Math.cos(an) * .13, .2 + Math.sin(an) * .13)), .022, C('#b8a37c'));
+    }
+    // переднее малое колесо
+    drawCircle(p.add(vec2(.66, .12)), .24, C('#4b4239'));
+    drawCircle(p.add(vec2(.66, .12)), .12, C('#e7d6b8'));
+    drawCircle(p.add(vec2(.66, .12)), .045, C('#b8a37c'));
+    // рама
+    drawRect(p.add(vec2(.08, .32)), vec2(1.34, .16), C('#7a4436'));
+    // корпус и капот
+    drawRect(p.add(vec2(.02, .56)), vec2(1.32, .5), C('#c96a54'));
+    drawRect(p.add(vec2(.02, .6)),  vec2(1.24, .4), C('#d97b64'));
+    drawRect(p.add(vec2(.58, .48)), vec2(.42, .34), C('#c96a54'));   // «нос» ниже
+    // решётка радиатора + фара
+    drawRect(p.add(vec2(.79, .46)), vec2(.09, .3), C('#5a3228'));
+    for (let i = 0; i < 3; i++) drawLine(p.add(vec2(.73, .37 + i * .1)), p.add(vec2(.85, .37 + i * .1)), .02, C('#8a5a3c'));
+    drawCircle(p.add(vec2(.74, .64)), .06, C('#f6e08a'));
+    drawCircle(p.add(vec2(.74, .64)), .03, C('#fff4c2'));
+    // крыло над задним колесом
+    drawRect(p.add(vec2(-.5, .58)), vec2(.66, .12), C('#a4503c'));
+    // кабина: рама, стекло, крыша
+    drawRect(p.add(vec2(-.34, .98)), vec2(.66, .56), C('#b85c48'));
+    drawRect(p.add(vec2(-.34, 1.02)), vec2(.5, .42), C('#bfe0ea'));
+    drawLine(p.add(vec2(-.34, .82)), p.add(vec2(-.34, 1.24)), .03, C('#9ec4d0'));
+    drawRect(p.add(vec2(-.34, 1.32)), vec2(.8, .11), C('#8a4032'));
+    // выхлопная труба + дымок
+    drawRect(p.add(vec2(.42, 1.04)), vec2(.08, .52), C('#6b5748'));
+    drawCircle(p.add(vec2(.42, 1.3)), .07, C('#5a4a3c'));
+    if (Math.random() < .3) pops.push({ p: p.add(vec2(.42, 1.42)), v: vec2(.15, .9), col: '#d9d4c8', t: .8, r: .1 });
 }
 
 // ---------- Табличка зоны ----------

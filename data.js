@@ -50,8 +50,8 @@ const MAXPLOTS = ZONES.reduce((s,z)=>s+z.plots, 0);
 // ---------- Работники / техника ----------
 // harv: сборщик (авто-сбор), sow: сеятель (авто-посадка), tract: трактор (цикл сбор+посев всего)
 const WORKERS = [
-    { id:'harv',  name:'Сборщик Ося',  desc:'Сам собирает готовый урожай', cost:5000,   costMul:3.5, max:6 },
-    { id:'sow',   name:'Сеятель Сеня', desc:'Сам засевает пустые грядки',  cost:12000,  costMul:3.5, max:6 },
+    { id:'harv',  name:'Сборщик',  desc:'Сам собирает готовый урожай', cost:5000,   costMul:3.5, max:6 },
+    { id:'sow',   name:'Сеятель', desc:'Сам засевает пустые грядки',  cost:12000,  costMul:3.5, max:6 },
     { id:'tract', name:'Трактор',      desc:'Раз в цикл собирает и засевает всё поле', cost:150000, costMul:4, max:5 },
 ];
 
@@ -85,8 +85,8 @@ const tractEvery = () => S.workers.tract ? 90 / Math.pow(1.35, S.workers.tract-1
 // ---------- Престиж ----------
 const SEED_BASE = 60000;   // seasonEarned для 1-го семени
 const seedsFromEarned = e => Math.floor(Math.sqrt(e / SEED_BASE));
-// престиж открывается только после покупки теплицы (последней зоны)
-const prestigeUnlocked = () => S.zones >= ZONES.length || S.cnt.prestiges > 0;
+// престиж доступен, как только заработано хотя бы на 1 золотое семя (как раньше)
+const prestigeUnlocked = () => S.cnt.prestiges > 0 || seedsFromEarned(S.seasonEarned) >= 1;
 const pendingSeeds = () => prestigeUnlocked() ? Math.max(0, seedsFromEarned(S.seasonEarned) - S.seasonSeeds) : 0;
 
 // ---------- Заказы ----------

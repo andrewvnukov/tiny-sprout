@@ -19,12 +19,19 @@ const SFX = {
     order:   [ .7, 0, 587, .02, .09, .2, 0, 1.4, 0, 0, 196, .06, 0, 0, 0, 0, 0, .8, .05 ],
     click:   [ .3, 0, 480, .005, .01, .03, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, .5, .005 ],
 };
-function sfx(name) { if (S && S.mute) return; try { zzfx(...SFX[name]); } catch(e) {} }
+// Раздельная громкость: ползунок 0..1, 0.5 = базовая. Эффекты масштабируем
+// прямо в вызове zzfx (мастер-гейн держим на 1), музыка — своим gain-узлом.
+const sfxGain = v => Math.max(0, .6 * (v || 0));    // .5 -> .3 (как было), 1 -> .6, 0 -> тишина
+const musGain = v => Math.max(0, 1.2 * (v || 0));   // .5 -> .6 (как было), 1 -> 1.2, 0 -> тишина
+function sfx(name) {
+    if (!S || (S.sfxVol || 0) <= 0) return;
+    try { const a = SFX[name].slice(); a[0] *= sfxGain(S.sfxVol); zzfx(...a); } catch(e) {}
+}
 
 // ---------- Фоновая музыка ----------
 // Мягкий эмбиент-пэд. Буфер генерируется ОДИН раз и кэшируется —
 // иначе тяжёлый zzfxM пересчитывался бы на каждый тап.
-let musicSource = null, musicOn = false, musicBuf = null, musicPending = false;
+let musicSource = null, musicOn = false, musicBuf = null, musicPending = false, musicGain = null;
 function makeMusic() {
     // Два синусоидных пэда — никаких колокольчиков, писков и резких атак.
     // Долгая атака (0.5–0.7 c) = звук «вплывает» без щелчка; долгий релиз =
@@ -48,7 +55,7 @@ function makeMusic() {
     return zzfxM(inst, pat, [0, 1, 2, 3, 0, 3, 2, 1], 40);
 }
 function startMusic() {
-    if (musicOn || musicPending || (S && S.mute)) return;
+    if (musicOn || musicPending || !S || (S.musVol || 0) <= 0) return;
     try {
         if (!musicBuf) musicBuf = makeMusic();             // генерируем единожды
         // ВАЖНО: playSamples проигрывает звук только если контекст уже running,
@@ -56,8 +63,10 @@ function startMusic() {
         // поэтому реально запускаем музыку в .then(), когда контекст точно ожил.
         const play = () => {
             musicPending = false;
-            if (musicOn || (S && S.mute)) return;
-            musicSource = playSamples(musicBuf, 2.0, 1, 0, true);  // громче — компенсируем мастер-гейн .3
+            if (musicOn || (S.musVol || 0) <= 0) return;
+            // собственный gain-узел: громкость музыки меняется на лету и независимо от эффектов
+            if (!musicGain && typeof audioContext !== 'undefined') musicGain = audioContext.createGain();
+            musicSource = playSamples(musicBuf, musGain(S.musVol), 1, 0, true, audioDefaultSampleRate, musicGain);
             if (musicSource) musicOn = true;               // помечаем только при реальном старте
         };
         const ac = (typeof audioContext !== 'undefined') ? audioContext : null;
@@ -71,9 +80,8 @@ function stopMusic() {
     if (musicSource) { try { musicSource.stop(); } catch(e) {} musicSource = null; }
     musicOn = false;
 }
-function toggleMute() {
-    S.mute = !S.mute;
-    setSoundVolume(S.mute ? 0 : .3);
-    if (S.mute) stopMusic(); else startMusic();
-    persist(true);
+// живое изменение громкости музыки (без перезапуска); на краях — старт/стоп
+function setMusicVolume() {
+    if (musicGain) musicGain.gain.value = musGain(S.musVol);
+    if ((S.musVol || 0) > 0) startMusic(); else stopMusic();
 }

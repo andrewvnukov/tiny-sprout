@@ -59,6 +59,7 @@ refresh:`<svg viewBox="0 0 24 24"><path d="M12 4.2a7.8 7.8 0 0 1 7.4 5.4h-2.9L20
 moon:`<svg viewBox="0 0 24 24"><path d="M13.8 2.8a9.4 9.4 0 1 0 7.4 12.6c-1.2.5-2.4.8-3.8.8a9 9 0 0 1-3.6-13.4Z" fill="#f0c95e"/><path d="M21.2 15.4c-1.2.5-2.4.8-3.8.8-2 0-3.8-.7-5.3-1.8 2.9 3.6 6 4.3 9.1 1Z" fill="#dfa32e"/><circle cx="8.4" cy="9" r="1.3" fill="#f6dc94"/><circle cx="11" cy="14.6" r=".9" fill="#f6dc94"/></svg>`,
 down:`<svg viewBox="0 0 24 24"><path d="M12 21.2 3.6 11.4c-.9-1.1-.1-2.8 1.4-2.8h3V4.2C8 3 9 2 10.2 2h3.6C15 2 16 3 16 4.2v4.4h3c1.5 0 2.3 1.7 1.4 2.8Z" fill="#eeb45f"/><path d="M12 21.2 20.4 11.4c.9-1.1.1-2.8-1.4-2.8h-1.6Z" fill="#dd9a45"/></svg>`,
 trophy:`<svg viewBox="0 0 24 24"><path d="M5 4.8h14v4.4c0 3.6-3 6.4-7 6.4s-7-2.8-7-6.4Z" fill="#f0c95e"/><path d="M19 4.8v4.4c0 3.6-3 6.4-7 6.4 2.6-1.4 4-4 4-7.8V4.8Z" fill="#e0ae3f"/><path d="M5 6H2.6c0 3 1.4 5 3.6 5.6M19 6h2.4c0 3-1.4 5-3.6 5.6" stroke="#dfa32e" stroke-width="1.7" fill="none"/><rect x="10.6" y="15" width="2.8" height="3.4" fill="#e0ae3f"/><rect x="7.6" y="18" width="8.8" height="3" rx="1.4" fill="#a07a52"/><ellipse cx="8.6" cy="7" rx="1.6" ry="2.2" fill="#f8e3a5" transform="rotate(-8 8.6 7)"/></svg>`,
+settings:`<svg viewBox="0 0 24 24"><g fill="#c9b493"><rect x="10.6" y="1.6" width="2.8" height="20.8" rx="1.4"/><rect x="1.6" y="10.6" width="20.8" height="2.8" rx="1.4"/><rect x="1.6" y="10.6" width="20.8" height="2.8" rx="1.4" transform="rotate(45 12 12)"/><rect x="1.6" y="10.6" width="20.8" height="2.8" rx="1.4" transform="rotate(-45 12 12)"/></g><circle cx="12" cy="12" r="7" fill="#c9b493"/><circle cx="12" cy="12" r="4.3" fill="#f6efdf"/><circle cx="12" cy="12" r="2" fill="#b7a789"/></svg>`,
 };
 const ic = id => ICONS[id] || '';
 const icc = id => `<i class="ci">${ic(id)}</i>`; // маленькая inline-иконка
@@ -90,7 +91,22 @@ function initUI() {
     $('sellBtn').onclick   = sellAll;
     $('boostBtn').onclick  = adBoost;
     $('growBtn').onclick   = adGrowAll;
-    $('muteBtn').onclick   = () => { toggleMute(); renderHud(); };
+    // шестерёнка открывает настройки звука (два ползунка: эффекты и музыка)
+    $('muteBtn').onclick   = () => {
+        $('sfxSlider').value = Math.round((S.sfxVol ?? .5) * 100);
+        $('musSlider').value = Math.round((S.musVol ?? .5) * 100);
+        openModal('soundModal');
+    };
+    $('sfxSlider').oninput  = e => { S.sfxVol = e.target.value / 100; persist(true); };
+    $('sfxSlider').onchange = () => { if ((S.sfxVol || 0) > 0) sfx('click'); };  // проба громкости
+    $('musSlider').oninput  = e => { S.musVol = e.target.value / 100; setMusicVolume(); persist(true); };
+    // подсказки по значениям в левом верхнем углу
+    const TIPS = {
+        coinChip: 'Монеты — покупай семена, грядки, технику и животных.',
+        seedChip: 'Золотые семена — награда за «Новый сезон». Дают постоянный бонус к доходу.',
+        ipsChip:  'Доход в секунду — сколько монет ферма приносит автоматически.',
+    };
+    for (const id in TIPS) $(id).addEventListener('pointerdown', () => showTip(id, TIPS[id]));
     $('overlay').onclick   = closeAllSheets;
     for (const b of document.querySelectorAll('.close'))
         b.onclick = closeAllSheets;
@@ -106,7 +122,7 @@ function initUI() {
         b.onclick = () => closeModal(b.closest('.modal').id);
 
     // музыка стартует по первому касанию где угодно (не только по канвасу)
-    const kick = () => { if (booted && !S.mute) startMusic();
+    const kick = () => { if (booted) startMusic();
         if (musicOn) { document.removeEventListener('pointerdown', kick, true); document.removeEventListener('keydown', kick, true); } };
     document.addEventListener('pointerdown', kick, true);
     document.addEventListener('keydown', kick, true);
@@ -142,6 +158,17 @@ function popChip(id) {
     const el = $(id); if (!el) return;
     el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
 }
+// маленькая подсказка под значением HUD (тап/наведение)
+let _tipT = null;
+function showTip(anchorId, text) {
+    const el = $('hudTip'), a = $(anchorId); if (!el || !a) return;
+    const r = a.getBoundingClientRect();
+    el.textContent = text;
+    el.style.left = Math.max(6, Math.min(window.innerWidth - 222, r.left)) + 'px';
+    el.style.top = (r.bottom + 8) + 'px';
+    el.classList.add('show');
+    clearTimeout(_tipT); _tipT = setTimeout(() => el.classList.remove('show'), 3000);
+}
 function renderHud() {
     const coinTxt = fmt(S.coins);
     if (_prevCoins !== null && coinTxt !== _prevCoins) popChip('coinChip');
@@ -168,8 +195,6 @@ function renderHud() {
     const cd = Math.ceil((S.adGrowAt - Date.now())/1000);
     $('growBtn').disabled = cd > 0;
     $('growBtn').innerHTML = cd > 0 ? icc('grow') + ' ' + cd + 'с' : icc('ad') + ' Дорастить всё';
-
-    $('muteBtn').innerHTML = `<span class="fico">${ic(S.mute ? 'mute' : 'sound')}</span>`;
 
     // бейджи
     const tot = storeTotal();
