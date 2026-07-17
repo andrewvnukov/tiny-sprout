@@ -33,8 +33,9 @@ function sfx(name) {
 // иначе тяжёлый zzfxM пересчитывался бы на каждый тап.
 let musicSource = null, musicOn = false, musicBuf = null, musicPending = false, musicGain = null;
 function makeMusic() {
-    // ~60 c: спокойное интро на пэдах (~9 c), затем чилл-бит (глухой мягкий кик +
-    // тихий хэт) поверх пэдов + чуть пианино, петля. Мягко, не давит на уши.
+    // ~3 минуты развивающегося чилла: интро на пэдах (~12 c), затем несколько
+    // секций с разными прогрессиями/мелодиями и «передышками», потом петля.
+    // МОНО (пан всё равно 0) — вдвое меньше памяти. Мягко, не давит на уши.
     const inst = [
         [ .34, 0, 110, .5, 1.2, 1.4, 0, 1, 0, 0, 0,   0,  0, 0,   0, 0, .12, .8,  .1 ],           // 0 низкий пэд
         [ .22, 0, 110, .7, 1.4, 1.6, 0, 1, 0, 0, 0,   0,  0, 0,   0, 0, .18, .75, .1 ],           // 1 верхний пэд
@@ -43,23 +44,26 @@ function makeMusic() {
         [ .12, 0, 110, .005, .05, .2, 1, 1, 0, 0, 0,  0,  0, 0,   0, 0, .06, .3, .04 ],           // 4 лёгкое пианино (треуг.)
     ];
     // Такт = 8 долей (~3 c при BPM 40). Пэд — открытые квинты (корень + 7 п/т).
-    // Барабаны/пианино: нота 12 = базовая частота инструмента; для пианино — мелодия.
     const pad   = (ins, n) => [ins, 0, n, 0, 0, 0, 0, 0, 0, 0];
     const drum  = (ins, on) => { const a = [ins, 0]; for (let i = 0; i < 8; i++) a.push(on.includes(i) ? 12 : 0); return a; };
-    const piano = (map) => { const a = [4, 0]; for (let i = 0; i < 8; i++) a.push(map[i] || 0); return a; };
-    const kick = drum(2, [0, 4]), hat = drum(3, [2, 6]), silK = drum(2, []), silH = drum(3, []), silP = piano({});
-    const roots = [29, 24, 26, 22], fifths = [36, 31, 33, 29];
-    // разреженная фортепианная мелодия по некоторым тактам (совсем слегка)
-    const mel = { 5:{0:36,4:33}, 7:{2:31,6:29}, 9:{0:33,3:36}, 11:{4:31,6:33},
-                  13:{0:36,4:33}, 15:{2:31,6:26}, 17:{0:29,4:33}, 19:{2:36,6:31} };
+    const piano = (map) => { const a = [4, 0]; for (let i = 0; i < 8; i++) a.push(map ? (map[i] || 0) : 0); return a; };
+    const kick = drum(2, [0, 4]), hat = drum(3, [2, 6]), silK = drum(2, []), silH = drum(3, []), silP = piano(null);
+    const bar = (root, beat, pm) => [ pad(0, root), pad(1, root + 7), beat ? kick : silK, beat ? hat : silH, pm ? piano(pm) : silP ];
     const pat = [];
-    for (let bar = 0; bar < 20; bar++) {                       // 20 тактов ≈ 60 c
-        const ci = bar % 4, beat = bar >= 3;                  // первые 3 такта (~9 c) — только пэды
-        pat.push([ pad(0, roots[ci]), pad(1, fifths[ci]),
-                   beat ? kick : silK, beat ? hat : silH,
-                   mel[bar] ? piano(mel[bar]) : silP ]);
-    }
-    return zzfxM(inst, pat, pat.map((_, i) => i), 40);
+    const add = (prog, count, beat, mels) => {
+        for (let k = 0; k < count; k++) pat.push(bar(prog[k % prog.length], beat, mels && mels[k % mels.length]));
+    };
+    const progA = [29, 24, 26, 22], progB = [24, 26, 29, 22], progC = [26, 29, 22, 24];
+    const mA = [ {0:36,4:33}, null, {2:31,6:29}, null ];
+    const mB = [ {0:33}, {4:36}, {0:31,4:33}, {6:29} ];
+    const mC = [ {0:29,4:33}, {2:36}, null, {4:31,6:36} ];
+    add(progA, 4, false, null);   // интро (~12 c) — только пэды
+    add(progA, 16, true, mA);     // секция A
+    add(progB, 4, false, null);   // передышка
+    add(progB, 16, true, mB);     // секция B
+    add(progC, 4, false, null);   // передышка
+    add(progC, 16, true, mC);     // секция C → петля  (итого 60 тактов ≈ 3 мин)
+    return [ zzfxM(inst, pat, pat.map((_, i) => i), 40)[0] ];   // моно: берём один канал
 }
 function startMusic() {
     if (musicOn || musicPending || !S || (S.musVol || 0) <= 0) return;
