@@ -24,7 +24,7 @@ function sfx(name) { if (S && S.mute) return; try { zzfx(...SFX[name]); } catch(
 // ---------- Фоновая музыка ----------
 // Тихое, воздушное эмбиент-арпеджио. Буфер генерируется ОДИН раз и
 // кэшируется — иначе тяжёлый zzfxM пересчитывался бы на каждый тап.
-let musicSource = null, musicOn = false, musicBuf = null;
+let musicSource = null, musicOn = false, musicBuf = null, musicPending = false;
 function makeMusic() {
     // zzfxM: инструменты (индексы 0 и 1), паттерны, секвенция, BPM
     const inst = [
@@ -40,14 +40,24 @@ function makeMusic() {
     return zzfxM(inst, pat, [0, 1, 0, 1], 56);
 }
 function startMusic() {
-    if (musicOn || (S && S.mute)) return;
+    if (musicOn || musicPending || (S && S.mute)) return;
     try {
-        if (typeof audioContext !== 'undefined' && audioContext && audioContext.state !== 'running')
-            audioContext.resume();
         if (!musicBuf) musicBuf = makeMusic();             // генерируем единожды
-        musicSource = playSamples(musicBuf, .45, 1, 0, true);
-        musicOn = true;
-    } catch(e) {}
+        // ВАЖНО: playSamples проигрывает звук только если контекст уже running,
+        // иначе просто вызывает resume() и молча выходит. resume() асинхронный —
+        // поэтому реально запускаем музыку в .then(), когда контекст точно ожил.
+        const play = () => {
+            musicPending = false;
+            if (musicOn || (S && S.mute)) return;
+            musicSource = playSamples(musicBuf, 2.0, 1, 0, true);  // громче — компенсируем мастер-гейн .3
+            if (musicSource) musicOn = true;               // помечаем только при реальном старте
+        };
+        const ac = (typeof audioContext !== 'undefined') ? audioContext : null;
+        if (ac && ac.state !== 'running') {
+            musicPending = true;
+            ac.resume().then(play).catch(() => { musicPending = false; });
+        } else play();
+    } catch(e) { musicPending = false; }
 }
 function stopMusic() {
     if (musicSource) { try { musicSource.stop(); } catch(e) {} musicSource = null; }
