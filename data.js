@@ -83,11 +83,15 @@ const sowEvery   = () => S.workers.sow   ? 7 / Math.pow(1.5, S.workers.sow-1)   
 const tractEvery = () => S.workers.tract ? 90 / Math.pow(1.35, S.workers.tract-1) : 0;
 
 // ---------- Престиж ----------
-const SEED_BASE = 60000;   // seasonEarned для 1-го семени
-const seedsFromEarned = e => Math.floor(Math.sqrt(e / SEED_BASE));
-// престиж доступен, как только заработано хотя бы на 1 золотое семя (как раньше)
-const prestigeUnlocked = () => S.cnt.prestiges > 0 || seedsFromEarned(S.seasonEarned) >= 1;
-const pendingSeeds = () => prestigeUnlocked() ? Math.max(0, seedsFromEarned(S.seasonEarned) - S.seasonSeeds) : 0;
+// Семена считаются от СУММАРНОГО заработка за всё время (lifeEarned), а не за
+// один сезон. Иначе буст ×N быстро отбивает порог после престижа и можно тут же
+// престижить снова. Теперь каждое новое семя требует всё больше суммарных монет
+// (квадратично), поэтому дозаработок после престижа даёт лишь чуть-чуть семян.
+const SEED_BASE = 120000;  // суммарных монет для 1-го семени
+const seedsFromEarned = e => Math.floor(Math.sqrt(Math.max(0, e) / SEED_BASE));
+const seedsClaimed = () => S.claimedSeeds || 0;      // семена, уже выданные престижем
+const pendingSeeds = () => Math.max(0, seedsFromEarned(S.lifeEarned) - seedsClaimed());
+const prestigeUnlocked = () => S.cnt.prestiges > 0 || pendingSeeds() >= 1;
 
 // ---------- Заказы ----------
 const ORDER_MULT = 1.6;    // цена заказа против рынка

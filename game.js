@@ -17,7 +17,7 @@ function freshState() {
     return {
         v: 1,
         coins: 25, seeds: 0,
-        seasonEarned: 0, seasonSeeds: 0, lifeEarned: 0,
+        seasonEarned: 0, seasonSeeds: 0, lifeEarned: 0, claimedSeeds: 0,
         ips: 0, bestIps: 0,
         mute: false, tut: 0,
         lastCrop: 0,
@@ -74,6 +74,9 @@ function restore(raw) {
         for (const k in f.animals) if (typeof f.animals[k] !== 'number') f.animals[k] = 0;
         const c = freshState().cnt;
         f.cnt = Object.assign(c, f.cnt);
+        // миграция на суммарную модель престижа: у старых сейвов нет claimedSeeds —
+        // выставляем «уже выдано» по текущему lifeEarned, чтобы не подарить пачку семян
+        if (typeof d.claimedSeeds !== 'number') f.claimedSeeds = seedsFromEarned(f.lifeEarned);
         while (f.crops.length < CROPS.length) f.crops.push(false);
         while (f.disc.length < CROPS.length) f.disc.push(false);
         if (!f.plots.length) f.plots = [{ c:-1, t:0, g:false }];
@@ -371,6 +374,7 @@ function doPrestige() {
     const p = pendingSeeds();
     if (p <= 0) return;
     S.seeds += p;
+    S.claimedSeeds = seedsClaimed() + p;   // фиксируем выданные семена (lifeEarned не сбрасываем)
     S.cnt.prestiges++;
     const keep = S;
     S.coins = 25;

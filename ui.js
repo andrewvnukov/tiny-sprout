@@ -462,8 +462,8 @@ function showPrestige() {
         а ты получишь <b class="gold">+${p} ${icc('seed')} золотых семян</b>.</p>
         <p>Каждое семя даёт <b>+10% к доходу навсегда</b>.<br>
         Сейчас у тебя ${S.seeds} ${icc('seed')} (бонус +${S.seeds*10}%).</p>
-        <p><small>Заработано за сезон: ${fmt(S.seasonEarned)} ${icc('coin')}.<br>
-        Следующее семя: ${fmt(SEED_BASE*Math.pow(seedsFromEarned(S.seasonEarned)+1,2))} ${icc('coin')} за сезон.</small></p>`;
+        <p><small>Всего заработано: ${fmt(S.lifeEarned)} ${icc('coin')}.<br>
+        До следующего семени: ${fmt(Math.max(0, SEED_BASE*Math.pow(seedsClaimed()+p+1,2) - S.lifeEarned))} ${icc('coin')}.</small></p>`;
     $('prestigeGo').disabled = p <= 0;
     $('prestigeGo').innerHTML = p > 0 ? icc('star') + ' Новый сезон (+' + p + ')' : 'Пока рано…';
     openModal('prestigeModal');
