@@ -54,15 +54,15 @@ function makeMusic() {
         for (let k = 0; k < count; k++) pat.push(bar(prog[k % prog.length], beat, mels && mels[k % mels.length]));
     };
     const progA = [29, 24, 26, 22], progB = [24, 26, 29, 22], progC = [26, 29, 22, 24];
-    const mA = [ {0:36,4:33}, null, {2:31,6:29}, null ];
-    const mB = [ {0:33}, {4:36}, {0:31,4:33}, {6:29} ];
-    const mC = [ {0:29,4:33}, {2:36}, null, {4:31,6:36} ];
+    // единый узнаваемый мотив пианино: «тын-тын» (2 ноты), такт паузы, следующая фраза.
+    // Один и тот же во всех секциях — разнообразие даёт смена прогрессии пэдов.
+    const mel = [ {0:36,4:33}, null, {2:31,6:29}, null, {0:33,4:36}, null, {2:31,6:33}, null ];
     add(progA, 4, false, null);   // интро (~12 c) — только пэды
-    add(progA, 16, true, mA);     // секция A
+    add(progA, 16, true, mel);    // секция A
     add(progB, 4, false, null);   // передышка
-    add(progB, 16, true, mB);     // секция B
+    add(progB, 16, true, mel);    // секция B
     add(progC, 4, false, null);   // передышка
-    add(progC, 16, true, mC);     // секция C → петля  (итого 60 тактов ≈ 3 мин)
+    add(progC, 16, true, mel);    // секция C → петля  (итого 60 тактов ≈ 3 мин)
     return [ zzfxM(inst, pat, pat.map((_, i) => i), 40)[0] ];   // моно: берём один канал
 }
 function startMusic() {
