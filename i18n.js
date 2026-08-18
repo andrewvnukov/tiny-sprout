@@ -117,6 +117,14 @@ const EN = {
     'Пока пусто. Собери золотые семена и стань первым!':
         'Nothing here yet. Collect golden seeds and be the first!',
     'Игрок':'Player', 'ты':'you',
+    'Не удалось загрузить рейтинг.':'Could not load the leaderboard.',
+    'Обновить':'Retry',
+    'Ты вне рейтинга':'You are not ranked',
+    'Войди, чтобы занять место и сохранить результат.':
+        'Sign in to take your place and save your score.',
+    'Войти':'Sign in',
+    'Твой результат появится в рейтинге после первого золотого семени.':
+        'Your score will appear once you earn your first golden seed.',
 
     // ---------- престиж ----------
     'Начни <b>новый сезон</b>: ферма, монеты и улучшения сбросятся,<br>а ты получишь <b class="gold">+{p} {seed} золотых семян</b>.':

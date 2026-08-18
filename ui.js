@@ -64,6 +64,9 @@ settings:`<svg viewBox="0 0 24 24"><g fill="#c9b493"><rect x="10.6" y="1.6" widt
 const ic = id => ICONS[id] || '';
 const icc = id => `<i class="ci">${ic(id)}</i>`; // маленькая inline-иконка
 const $ = id => document.getElementById(id);
+// имена и аватары игроков приходят с платформы и подставляются в innerHTML
+const escHtml = s => String(s).replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 let uiTouch = 0;
 let shopTab = 'seeds', orderTab = 'orders', albumTab = 'coll';
 
@@ -445,6 +448,16 @@ function renderAlbum() {
 }
 function albumFlash() { /* хук на будущее — вспышка в альбоме */ }
 // рейтинг игроков по сумме золотых семян (только на платформе Яндекс Игр)
+function lbRow(e, me) {
+    const nm = escHtml((e.player && e.player.publicName) || '') || T('Игрок');
+    let av = '';
+    try { av = e.player && e.player.getAvatarSrc ? e.player.getAvatarSrc('small') : ''; } catch(x) {}
+    return `<div class="row ${me ? 'sel' : ''}">
+        <div class="lbRank">${e.rank}</div>
+        ${av ? `<img class="lbAva" src="${escHtml(av)}" alt="">` : `<div class="ic">${ic('star')}</div>`}
+        <div class="info"><b>${nm}${me ? ' · ' + T('ты') : ''}</b><small>${fmt(e.score)} ${icc('seed')}</small></div>
+    </div>`;
+}
 function renderRank(box) {
     if (!ysdk || typeof fetchLeaderboard !== 'function') {
         box.innerHTML = `<div class="empty">${T('Рейтинг доступен в приложении Яндекс Игр.')}</div>`;
@@ -453,25 +466,47 @@ function renderRank(box) {
     box.innerHTML = `<div class="empty">${T('Загрузка рейтинга…')}</div>`;
     fetchLeaderboard(res => {
         if (albumTab !== 'rank') return;                       // пользователь ушёл на другую вкладку
-        if (!res || !res.entries || !res.entries.length) {
-            box.innerHTML = `<div class="empty">${T('Пока пусто. Собери золотые семена и стань первым!')}</div>`;
+
+        if (res && res.error) {                                 // лидерборд не отдался — предлагаем повтор
+            box.innerHTML = `<div class="empty">${T('Не удалось загрузить рейтинг.')}
+                <div style="margin-top:12px"><button class="bbtn" id="lbRetry">${T('Обновить')}</button></div></div>`;
+            $('lbRetry').onclick = () => { sfx('click'); renderRankFresh(box); };
             return;
         }
-        const ur = res.userRank || 0;
+        const entries = (res && res.entries) || [];
+        const ur = (res && res.userRank) || 0;
         let h = '';
-        for (const e of res.entries) {
-            const me = ur && e.rank === ur;
-            const nm = (e.player && e.player.publicName) || T('Игрок');
-            let av = '';
-            try { av = e.player && e.player.getAvatarSrc ? e.player.getAvatarSrc('small') : ''; } catch(x) {}
-            h += `<div class="row ${me ? 'sel' : ''}">
-                <div class="lbRank">${e.rank}</div>
-                ${av ? `<img class="lbAva" src="${av}" alt="">` : `<div class="ic">${ic('star')}</div>`}
-                <div class="info"><b>${nm}${me ? ' · ' + T('ты') : ''}</b><small>${fmt(e.score)} ${icc('seed')}</small></div>
-            </div>`;
+
+        // неавторизованный игрок не попадает в таблицу и не видит своего места
+        if (!lbAuthed) {
+            h += `<div class="row chest"><div class="ic">${ic('star')}</div>
+                <div class="info"><b>${T('Ты вне рейтинга')}</b><small>${T('Войди, чтобы занять место и сохранить результат.')}</small></div>
+                <button class="btn" id="lbLogin">${T('Войти')}</button></div>`;
+        }
+        if (!entries.length) {
+            h += `<div class="empty">${T('Пока пусто. Собери золотые семена и стань первым!')}</div>`;
+        } else {
+            for (const e of entries) h += lbRow(e, !!ur && e.rank === ur);
+            if (lbAuthed && !ur)
+                h += `<div class="hint">${T('Твой результат появится в рейтинге после первого золотого семени.')}</div>`;
         }
         box.innerHTML = h;
+        const btn = $('lbLogin');
+        if (btn) btn.onclick = () => {
+            sfx('click');
+            btn.disabled = true;
+            lbLogin(ok => {
+                if (!ok) { btn.disabled = false; return; }
+                toast(T('С возвращением!'));
+                if (albumTab === 'rank') renderRankFresh(box);
+            });
+        };
     });
+}
+// принудительное обновление в обход кэша
+function renderRankFresh(box) {
+    box.innerHTML = `<div class="empty">${T('Загрузка рейтинга…')}</div>`;
+    fetchLeaderboard(() => renderRank(box), true);
 }
 
 // ---------- Престиж ----------

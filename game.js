@@ -7,7 +7,12 @@
 let S = null;
 let ysdk = null;
 const LB_NAME = 'goldenSeeds';         // техническое имя лидерборда в консоли Яндекс Игр
-let lbBoard = null, _lbLast = -1;
+let lbBoard = null;                    // нормализованный API: { setScore, getEntries }
+let lbPlayer = null;                   // объект игрока (нужен для isAuthorized)
+let lbAuthed = false;                  // авторизован ли игрок: без этого запись и своё место недоступны
+let lbCanWrite = false;                // доступен ли leaderboards.setScore на этой платформе
+let _lbLast = -1, _lbWroteAt = 0, _lbTimer = 0;
+let _lbCache = null, _lbCacheAt = 0;
 let earnAcc = 0, ipsTimer = 0;
 let harvT = 0, sowT = 0, sellT = 0;   // таймеры работников (не сохраняются)
 let saveT = 0;
@@ -88,26 +93,107 @@ function restore(raw) {
 }
 
 // ---------- Лидерборд (Яндекс Игры): сумма золотых семян ----------
-function initLeaderboard() {
-    if (!ysdk) return;
+// Лимиты платформы: запись — не чаще 1 раза в секунду, чтение — 20 запросов
+// за 5 минут. Поэтому запись троттлится, а выдача кэшируется.
+const LB_WRITE_MS = 1200;      // минимальный интервал между setScore
+const LB_CACHE_MS = 30000;     // сколько живёт кэш выдачи
+const LB_TOP = 15;             // 1..20 по документации
+const LB_AROUND = 5;           // 1..10 по документации
+
+// Приводим оба поколения API к одному виду: актуальное — ysdk.leaderboards
+// (setScore/getEntries), устаревшее — ysdk.getLeaderboards()
+// (setLeaderboardScore/getLeaderboardEntries).
+function lbApi(sdk) {
     try {
-        const g = ysdk.getLeaderboards ? ysdk.getLeaderboards() : ysdk.leaderboards;
-        Promise.resolve(g).then(lb => { lbBoard = lb; submitScore(true); }).catch(() => {});
+        if (sdk.leaderboards && sdk.leaderboards.setScore)
+            return Promise.resolve(sdk.leaderboards);
+        if (typeof sdk.getLeaderboards === 'function')
+            return Promise.resolve(sdk.getLeaderboards()).then(o => o && {
+                setScore:   (n, s, e) => o.setLeaderboardScore(n, s, e),
+                getEntries: (n, opt)  => o.getLeaderboardEntries(n, opt),
+            });
     } catch(e) {}
+    return Promise.resolve(null);
+}
+// isAvailableMethod возвращает Promise<Boolean>; на старых сборках его может не быть
+function lbAvailable(name) {
+    try {
+        if (typeof ysdk.isAvailableMethod !== 'function') return Promise.resolve(true);
+        return Promise.resolve(ysdk.isAvailableMethod(name)).catch(() => false);
+    } catch(e) { return Promise.resolve(false); }
+}
+function lbCheckAuth() {
+    try {
+        return ysdk.getPlayer().then(p => {
+            lbPlayer = p;
+            // getMode() устарел, но остаётся запасным вариантом
+            if (typeof p.isAuthorized === 'function') return !!p.isAuthorized();
+            if (typeof p.getMode === 'function') return p.getMode() !== 'lite';
+            return true;
+        }).catch(() => false);
+    } catch(e) { return Promise.resolve(false); }
+}
+function initLeaderboard() {
+    if (!ysdk) return Promise.resolve(false);
+    return Promise.all([lbApi(ysdk), lbAvailable('leaderboards.setScore'), lbCheckAuth()])
+        .then(([api, canWrite, authed]) => {
+            lbBoard = api || null;
+            lbCanWrite = !!canWrite;
+            lbAuthed = !!authed;
+            if (lbBoard && lbAuthed && lbCanWrite) submitScore(true);
+            return !!lbBoard;
+        })
+        .catch(() => false);
+}
+// Показываем окно авторизации: неавторизованный игрок не может ни писать
+// результат, ни видеть своё место в выдаче.
+function lbLogin(cb) {
+    cb = cb || (() => {});
+    if (!ysdk || !ysdk.auth || typeof ysdk.auth.openAuthDialog !== 'function') { cb(false); return; }
+    ysdk.auth.openAuthDialog()
+        .then(() => lbCheckAuth())
+        .then(a => {
+            lbAuthed = !!a;
+            _lbCache = null;                 // выдача теперь другая — со своим местом
+            if (lbAuthed) submitScore(true);
+            cb(lbAuthed);
+        })
+        .catch(() => cb(false));             // игрок закрыл окно — это не ошибка
 }
 function submitScore(force) {
-    if (!lbBoard || !S) return;
-    const sc = S.seeds | 0;
+    if (!lbBoard || !S || !lbAuthed || !lbCanWrite) return;
+    const sc = Math.max(0, S.seeds | 0);     // счёт должен быть неотрицательным
+    // с нулём в таблице делать нечего: семена только копятся, поэтому 0 бывает
+    // лишь до первого семени — иначе рейтинг забился бы пустыми записями
+    if (sc <= 0) return;
     if (!force && sc === _lbLast) return;
+    const wait = LB_WRITE_MS - (Date.now() - _lbWroteAt);
+    if (wait > 0) {                          // упёрлись в лимит — отправим чуть позже
+        clearTimeout(_lbTimer);
+        _lbTimer = setTimeout(() => submitScore(true), wait + 50);
+        return;
+    }
     _lbLast = sc;
-    try { const r = lbBoard.setLeaderboardScore(LB_NAME, sc); r && r.catch && r.catch(() => {}); } catch(e) {}
-}
-function fetchLeaderboard(cb) {
-    if (!lbBoard) { cb(null); return; }
+    _lbWroteAt = Date.now();
     try {
-        lbBoard.getLeaderboardEntries(LB_NAME, { includeUser: true, quantityAround: 6, quantityTop: 12 })
-            .then(res => cb(res)).catch(() => cb(null));
-    } catch(e) { cb(null); }
+        const r = lbBoard.setScore(LB_NAME, sc);
+        if (r && r.catch) r.catch(() => { _lbLast = -1; });   // дадим повторить позже
+    } catch(e) { _lbLast = -1; }
+}
+// cb получает { entries, userRank } либо { error } — UI различает причины,
+// чтобы не показывать «пусто» там, где на самом деле нужна авторизация.
+function fetchLeaderboard(cb, fresh) {
+    if (!lbBoard) { cb({ error: 'unavailable' }); return; }
+    if (!fresh && _lbCache && Date.now() - _lbCacheAt < LB_CACHE_MS) { cb(_lbCache); return; }
+    try {
+        // includeUser только для авторизованных: иначе запрос отвергается
+        lbBoard.getEntries(LB_NAME, {
+            includeUser: lbAuthed, quantityAround: LB_AROUND, quantityTop: LB_TOP,
+        }).then(res => {
+            _lbCache = res; _lbCacheAt = Date.now();
+            cb(res);
+        }).catch(() => cb({ error: 'fail' }));
+    } catch(e) { cb({ error: 'fail' }); }
 }
 
 // ---------- Экономика ----------
@@ -742,10 +828,13 @@ function boot(raw) {
         YaGames.init().then(sdk => {
             ysdk = sdk;
             return sdk.getPlayer().then(p => p.getData(['save'])).then(d => {
-                if (done) return;
-                done = true;
-                boot(d && d.save ? d.save : localRaw);
-                try { ysdk.features.LoadingAPI && ysdk.features.LoadingAPI.ready(); } catch(e) {}
+                // если SDK ответил позже фолбэка, игра уже запущена с локального
+                // сейва — но лидерборд всё равно нужно поднять
+                if (!done) {
+                    done = true;
+                    boot(d && d.save ? d.save : localRaw);
+                    try { ysdk.features.LoadingAPI && ysdk.features.LoadingAPI.ready(); } catch(e) {}
+                }
                 initLeaderboard();
             });
         }).catch(fallback);
