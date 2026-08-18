@@ -118,7 +118,7 @@ function earn(a) {
     earnAcc += a;
 }
 function spend(a) {
-    if (S.coins < a) { sfx('error'); toast('Не хватает монет!'); return false; }
+    if (S.coins < a) { sfx('error'); toast(T('Не хватает монет!')); return false; }
     S.coins -= a;
     return true;
 }
@@ -127,7 +127,7 @@ function spend(a) {
 function plantPlot(i, ci, silent) {
     const c = CROPS[ci];
     if (!S.crops[ci] || S.plots[i].c >= 0) return false;
-    if (S.coins < c.seed) { if (!silent) { sfx('error'); toast('Семена стоят ' + fmt(c.seed) + ' монет'); } return false; }
+    if (S.coins < c.seed) { if (!silent) { sfx('error'); toast(T('Семена стоят {n} монет', { n: fmt(c.seed) })); } return false; }
     S.coins -= c.seed;
     S.plots[i] = { c: ci, t: 0, g: Math.random() < goldChance() };
     S.cnt.planted++;
@@ -142,7 +142,7 @@ function harvestPlot(i, silent) {
     const c = CROPS[p.c];
     if (p.t < cropGrow(c)) return false;
     const qty = p.g ? 5 : 1;
-    if (storeTotal() + qty > whCap()) { if (!silent) { sfx('error'); toast('Склад полон! Продай урожай.'); } return false; }
+    if (storeTotal() + qty > whCap()) { if (!silent) { sfx('error'); toast(T('Склад полон! Продай урожай.')); } return false; }
     S.store[c.id] = (S.store[c.id]||0) + qty;
     S.cnt.harvests++;
     if (p.g) { S.cnt.goldens++; if (!silent) sfx('golden'); }
@@ -171,7 +171,7 @@ function buyPlot() {
     if (!spend(cost)) return;
     S.plots.push({ c:-1, t:0, g:false });
     sfx('buy');
-    toast('Новая грядка!');
+    toast(T('Новая грядка!'));
     if (S.plots.length >= MAXPLOTS) S.cnt.plotsAll = 1;
     persist(true);
 }
@@ -181,7 +181,7 @@ function buyZone() {
     if (!spend(z.unlock)) return;
     S.zones++;
     sfx('chest');
-    toast(z.name + ' — открыто!');
+    toast(T('{name} — открыто!', { name: T(z.name) }));
     persist(true);
 }
 
@@ -189,14 +189,14 @@ function buyZone() {
 function buyCrop(i) {
     const c = CROPS[i];
     if (S.crops[i]) { S.lastCrop = i; renderShop(); renderHud(); sfx('click'); return; }
-    if (c.zone >= S.zones) { sfx('error'); toast('Сначала открой зону «' + ZONES[c.zone].name + '»'); return; }
+    if (c.zone >= S.zones) { sfx('error'); toast(T('Сначала открой зону «{zone}»', { zone: T(ZONES[c.zone].name) })); return; }
     if (!spend(c.unlock)) return;
     S.crops[i] = true;
     S.disc[i] = true;
     S.lastCrop = i;
     if (S.crops.every(x=>x)) S.cnt.cropsAll = 1;
     sfx('buy');
-    toast(c.name + ' — открыто!');
+    toast(T('{name} — открыто!', { name: T(c.name) }));
     albumFlash(i);
     persist(true);
     renderShop(); renderHud();
@@ -215,7 +215,8 @@ function buyWorker(id) {
     if (!spend(workerCost(w, S.workers[id]))) return;
     S.workers[id]++;
     sfx('buy');
-    toast(S.workers[id] === 1 ? w.name + ' приступает к работе!' : w.name + ' — уровень ' + S.workers[id]);
+    toast(S.workers[id] === 1 ? T('{name} приступает к работе!', { name: T(w.name) })
+                             : T('{name} — уровень {lvl}', { name: T(w.name), lvl: S.workers[id] }));
     persist(true);
     renderShop(); renderHud();
 }
@@ -226,7 +227,7 @@ function buyAnimal(id) {
     S.animals[id]++;
     if (ANIMALS.every(x => S.animals[x.id] > 0)) S.cnt.animAll = 1;
     sfx('animal');
-    toast(a.name + ' поселилась на ферме!');
+    toast(T('{name} поселилась на ферме!', { name: T(a.name) }));
     persist(true);
     renderShop(); renderHud();
 }
@@ -248,7 +249,7 @@ function sellStore(id, n) {
     earn(got);
     S.cnt.sold += n;
     sfx('sell');
-    toast('+' + fmt(got) + ' монет');
+    toast(T('+{n} монет', { n: fmt(got) }));
     if (S.tut === 2) { S.tut = 3; renderTut(); }
     persist();
     renderBarn(); renderHud();
@@ -261,7 +262,7 @@ function sellAll() {
     earn(got);
     S.cnt.sold += n;
     sfx('sell');
-    toast('+' + fmt(got) + ' монет');
+    toast(T('+{n} монет', { n: fmt(got) }));
     if (S.tut === 2) { S.tut = 3; renderTut(); }
     persist();
     renderBarn(); renderHud();
@@ -292,17 +293,17 @@ function fulfillOrder(k) {
     const o = S.orders[k];
     if (!o) return;
     const c = CROPS[o.crop];
-    if ((S.store[c.id]||0) < o.qty) { sfx('error'); toast('Не хватает: ' + c.name + ' x' + o.qty); return; }
+    if ((S.store[c.id]||0) < o.qty) { sfx('error'); toast(T('Не хватает: {name} x{qty}', { name: T(c.name), qty: o.qty })); return; }
     S.store[c.id] -= o.qty;
     if (!S.store[c.id]) delete S.store[c.id];
     earn(o.reward);
-    if (o.seed) { S.seeds += o.seed; toast('+1 золотое семя!'); }
+    if (o.seed) { S.seeds += o.seed; toast(T('+1 золотое семя!')); }
     S.cnt.orders++;
     S.cnt.sold += o.qty;
     S.orders[k] = null;            // слот освобождён; новый придёт по «ведру» появления
     ensureOrders();
     sfx('order');
-    toast('Заказ выполнен! +' + fmt(o.reward) + ' монет');
+    toast(T('Заказ выполнен! +{n} монет', { n: fmt(o.reward) }));
     persist(true);
     renderOrders(); renderHud();
 }
@@ -310,7 +311,7 @@ function skipOrder(k) {
     if (!S.orders[k]) return;
     const now = Date.now();
     if (!S.ordSkipT || now - S.ordSkipT >= SKIP_WINDOW_MS) { S.ordSkipT = now; S.ordSkipN = 0; }
-    if (S.ordSkipN >= SKIP_MAX) { sfx('error'); toast('Смена заданий: лимит ' + SKIP_MAX + ' за 2 часа'); return; }
+    if (S.ordSkipN >= SKIP_MAX) { sfx('error'); toast(T('Смена заданий: лимит {max} за 2 часа', { max: SKIP_MAX })); return; }
     S.ordSkipN++;
     S.orders[k] = rollOrder();     // смена в том же слоте — «ведро» появления не тратим
     sfx('click');
@@ -341,7 +342,7 @@ function claimQuest(k) {
     q.claimed = true;
     earn(q.reward);
     sfx('quest');
-    toast('Квест выполнен! +' + fmt(q.reward) + ' монет');
+    toast(T('Квест выполнен! +{n} монет', { n: fmt(q.reward) }));
     persist(true);
     renderOrders(); renderHud();
 }
@@ -352,7 +353,7 @@ function claimChest() {
     earn(r.coins);
     S.seeds += r.seed;
     sfx('chest');
-    toast('Сундук: +' + fmt(r.coins) + ' монет и +1 золотое семя!');
+    toast(T('Сундук: +{n} монет и +1 золотое семя!', { n: fmt(r.coins) }));
     persist(true);
     renderOrders(); renderHud();
 }
@@ -365,7 +366,7 @@ function checkAch() {
             S.ach[a.id] = true;
             S.seeds += a.seed;
             sfx('chest');
-            toast('Достижение «' + a.name + '»: +' + a.seed + ' зол. сем.');
+            toast(T('Достижение «{name}»: +{n} зол. сем.', { name: T(a.name), n: a.seed }));
             persist(true);
             renderHud();
         }
@@ -397,7 +398,7 @@ function doPrestige() {
     S.boostUntil = 0;
     ensureOrders();
     sfx('prestige');
-    toast('Новый сезон! +' + p + ' золотых семян');
+    toast(T('Новый сезон! +{p} золотых семян', { p }));
     fxPrestige();
     persist(true);
     closeAllSheets();
@@ -423,7 +424,7 @@ function adBoost() {
     showRewarded(() => {
         S.boostUntil = Date.now() + BOOST_MIN*60000;
         sfx('chest');
-        toast('Доход x2 на ' + BOOST_MIN + ' минуты!');
+        toast(T('Доход x2 на {n} минуты!', { n: BOOST_MIN }));
         persist(true);
         renderHud();
     });
@@ -435,7 +436,7 @@ function adGrowAll() {
             if (p.c >= 0) p.t = cropGrow(CROPS[p.c]);
         S.adGrowAt = Date.now() + AD_GROW_CD*1000;
         sfx('chest');
-        toast('Всё выросло!');
+        toast(T('Всё выросло!'));
         persist(true);
         renderHud();
     });
@@ -663,7 +664,9 @@ function offlineBonus() {
     fastForward(offlineT);
     const coins = Math.floor(S.coins) - c0, store = storeTotal() - st0;
     sfx(coins > 0 || store > 0 ? 'coin' : 'error');
-    toast(coins > 0 ? '+' + fmt(coins) + ' монет' : store > 0 ? '+' + store + ' на склад' : 'Ничего нового');
+    toast(coins > 0 ? T('+{n} монет', { n: fmt(coins) })
+        : store > 0 ? T('+{n} на склад', { n: store })
+        : T('Ничего нового'));
     persist(true);
     renderHud(); renderBarn();
 }
@@ -705,6 +708,8 @@ window.advanceTime = ms => { simulate(ms/1000); renderHud(); };
 
 // ---------- Загрузка ----------
 function boot(raw) {
+    setLang(detectLang(ysdk));   // до initUI: вся статика и рендеры уже на нужном языке
+    applyStaticT();
     S = restore(raw);
     setSoundVolume(1);   // мастер фиксирован; громкости масштабируем в sfx()/музыке
     ensureOrders();

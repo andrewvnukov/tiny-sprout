@@ -211,6 +211,12 @@ button { font-family:inherit; color:var(--ink); }
 .sndRow input[type=range]::-moz-range-thumb { width:24px; height:24px; border-radius:50%; background:var(--green);
     border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
 
+/* ---------- выбор языка ---------- */
+.langSel { flex:1; display:flex; gap:6px; }
+.langBtn { flex:1; padding:8px 4px; border:none; border-radius:12px; background:var(--cream);
+    color:var(--ink-soft); font-family:inherit; font-weight:800; font-size:13px; cursor:pointer; }
+.langBtn.on { background:var(--green); color:#fff; box-shadow:0 2px 0 var(--green-edge); }
+
 /* ---------- строки лидерборда ---------- */
 .lbRank { flex:0 0 30px; text-align:center; font-weight:800; font-size:15px; color:var(--ink-soft); }
 .lbAva { width:38px; height:38px; border-radius:50%; object-fit:cover; flex-shrink:0; background:var(--cream); }
@@ -257,47 +263,47 @@ button { font-family:inherit; color:var(--ink); }
 <div class="overlay ui" id="overlay"></div>
 
 <div class="sheet ui" id="cropSheet">
-    <h2><span class="fico" data-ico="wheat"></span>Что сажать?</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="wheat"></span><span data-t="Что сажать?">Что сажать?</span></h2><button class="close">✕</button>
     <div class="list"><div class="grid" id="cropPickList"></div>
-    <div class="hint">Тап по грядке сажает выбранную культуру</div></div>
+    <div class="hint" data-t="Тап по грядке сажает выбранную культуру">Тап по грядке сажает выбранную культуру</div></div>
 </div>
 
 <div class="sheet ui" id="shopSheet">
-    <h2><span class="fico" data-ico="shop"></span>Магазин</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="shop"></span><span data-t="Магазин">Магазин</span></h2><button class="close">✕</button>
     <div class="tabs">
-        <button class="tab on" data-tab="seeds">Семена</button>
-        <button class="tab" data-tab="ups">Улучшения</button>
-        <button class="tab" data-tab="work">Техника</button>
-        <button class="tab" data-tab="anim">Животные</button>
+        <button class="tab on" data-tab="seeds" data-t="Семена">Семена</button>
+        <button class="tab" data-tab="ups" data-t="Улучшения">Улучшения</button>
+        <button class="tab" data-tab="work" data-t="Техника">Техника</button>
+        <button class="tab" data-tab="anim" data-t="Животные">Животные</button>
     </div>
     <div class="list" id="shopList"></div>
 </div>
 
 <div class="sheet ui" id="barnSheet">
-    <h2><span class="fico" data-ico="barn"></span>Склад</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="barn"></span><span data-t="Склад">Склад</span></h2><button class="close">✕</button>
     <div class="capbar">
         <div id="barnCap">Склад: 0 / 60</div>
         <div class="capwrap"><i id="barnBar" style="width:0%"></i></div>
     </div>
     <div class="list" id="barnList"></div>
-    <div style="padding:0 16px 16px"><button class="bbtn" id="sellAllBtn" style="width:100%; justify-content:center"><span class="ci" data-ico="sell"></span>Продать всё</button></div>
+    <div style="padding:0 16px 16px"><button class="bbtn" id="sellAllBtn" style="width:100%; justify-content:center"><span class="ci" data-ico="sell"></span><span data-t="Продать всё">Продать всё</span></button></div>
 </div>
 
 <div class="sheet ui" id="orderSheet">
-    <h2><span class="fico" data-ico="orders"></span>Заказы</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="orders"></span><span data-t="Заказы">Заказы</span></h2><button class="close">✕</button>
     <div class="tabs">
-        <button class="tab on" data-tab="orders">Заказы</button>
-        <button class="tab" data-tab="quests">Квесты дня</button>
+        <button class="tab on" data-tab="orders" data-t="Заказы">Заказы</button>
+        <button class="tab" data-tab="quests" data-t="Квесты дня">Квесты дня</button>
     </div>
     <div class="list" id="orderList"></div>
 </div>
 
 <div class="sheet ui" id="albumSheet">
-    <h2><span class="fico" data-ico="album"></span>Альбом</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="album"></span><span data-t="Альбом">Альбом</span></h2><button class="close">✕</button>
     <div class="tabs">
-        <button class="tab on" data-tab="coll">Коллекция</button>
-        <button class="tab" data-tab="ach">Достижения</button>
-        <button class="tab" data-tab="rank">Рейтинг</button>
+        <button class="tab on" data-tab="coll" data-t="Коллекция">Коллекция</button>
+        <button class="tab" data-tab="ach" data-t="Достижения">Достижения</button>
+        <button class="tab" data-tab="rank" data-t="Рейтинг">Рейтинг</button>
     </div>
     <div class="list" id="albumList"></div>
 </div>
@@ -305,25 +311,31 @@ button { font-family:inherit; color:var(--ink); }
 <!-- Модалки -->
 <div class="modal ui" id="soundModal">
     <div class="mbox">
-        <h2><span class="fico" data-ico="settings"></span>Звук</h2>
-        <div class="sndRow"><span>Эффекты</span><input type="range" id="sfxSlider" min="0" max="100" step="1" value="50"></div>
-        <div class="sndRow"><span>Музыка</span><input type="range" id="musSlider" min="0" max="100" step="1" value="50"></div>
-        <button class="bbtn close2">Готово</button>
+        <h2><span class="fico" data-ico="settings"></span><span data-t="Звук">Звук</span></h2>
+        <div class="sndRow"><span data-t="Эффекты">Эффекты</span><input type="range" id="sfxSlider" min="0" max="100" step="1" value="50"></div>
+        <div class="sndRow"><span data-t="Музыка">Музыка</span><input type="range" id="musSlider" min="0" max="100" step="1" value="50"></div>
+        <div class="sndRow"><span data-t="Язык">Язык</span>
+            <div class="langSel">
+                <button class="langBtn" data-lang="ru">Рус</button>
+                <button class="langBtn" data-lang="en">Eng</button>
+            </div>
+        </div>
+        <button class="bbtn close2" data-t="Готово">Готово</button>
     </div>
 </div>
 
 <div class="modal ui" id="prestigeModal">
     <div class="mbox">
-        <h2><span class="fico" data-ico="star"></span>Новый сезон</h2>
+        <h2><span class="fico" data-ico="star"></span><span data-t="Новый сезон">Новый сезон</span></h2>
         <div id="prestigeInfo"></div>
         <button class="bbtn" id="prestigeGo">Новый сезон</button>
-        <button class="bbtn close2">Позже</button>
+        <button class="bbtn close2" data-t="Позже">Позже</button>
     </div>
 </div>
 
 <div class="modal ui" id="offlineModal">
     <div class="mbox">
-        <h2><span class="fico" data-ico="moon"></span>С возвращением!</h2>
+        <h2><span class="fico" data-ico="moon"></span><span data-t="С возвращением!">С возвращением!</span></h2>
         <p id="offlineInfo"></p>
         <button class="bbtn" id="offlineX2"><span class="ci" data-ico="ad"></span>Забрать x2</button>
         <button class="bbtn" id="offlineTake">Забрать</button>
@@ -340,6 +352,7 @@ button { font-family:inherit; color:var(--ink); }
 <!-- Yandex Games SDK (вне платформы не загрузится — игра уйдёт в localStorage) -->
 <script src="https://yandex.ru/games/sdk/v2" onerror="window.__noSdk=1"></script>
 <script src="littlejs.release.js"></script>
+<script src="i18n.js"></script>
 <script src="data.js"></script>
 <script src="sfx.js"></script>
 <script src="render.js"></script>

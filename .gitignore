@@ -11,3 +11,7 @@ assets/kenney-bases/Samples/
 # разведка ассетов (не используем — остались на процедурном векторе)
 assets/
 poc-sprites.html
+
+# сборка архива для публикации
+dist/
+store/_promo.html

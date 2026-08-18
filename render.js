@@ -1112,6 +1112,6 @@ function renderWorldUI() {
         prestigeT -= timeDelta;
         const c = vec2(camX, camY + 3);
         drawStar(c.add(vec2(-3, 0)), .4); drawStar(c.add(vec2(3, 0)), .4);
-        drawText('Новый сезон!', c, 1.15, C('#e9b949'), .07, new Color(.42, .3, .1, .5));
+        drawText(T('Новый сезон!'), c, 1.15, C('#e9b949'), .07, new Color(.42, .3, .1, .5));
     }
 }

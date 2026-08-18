@@ -105,7 +105,21 @@ function initUI() {
         coinChip: 'Монеты — покупай семена, грядки, технику и животных. Зарабатывай, продавая урожай.',
         seedChip: 'Золотые семена — награда за «Новый сезон». Дают постоянный бонус к доходу.',
     };
-    for (const id in TIPS) { const el = $(id); if (el) el.addEventListener('pointerdown', () => showTip(id, TIPS[id])); }
+    for (const id in TIPS) { const el = $(id); if (el) el.addEventListener('pointerdown', () => showTip(id, T(TIPS[id]))); }
+    // язык: сохраняемся и перезагружаемся — так гарантированно переводится всё,
+    // включая уже отрисованные панели и запечённый мир
+    for (const b of document.querySelectorAll('.langBtn')) {
+        b.classList.toggle('on', b.dataset.lang === LANG);
+        b.onclick = () => {
+            if (b.dataset.lang === LANG) return;
+            sfx('click');
+            persist(true);
+            setLang(b.dataset.lang);
+            const u = new URL(location.href);
+            u.searchParams.delete('lang');   // выбор уже сохранён в localStorage
+            location.replace(u.toString());
+        };
+    }
     $('overlay').onclick   = closeAllSheets;
     for (const b of document.querySelectorAll('.close'))
         b.onclick = closeAllSheets;
@@ -183,20 +197,20 @@ function renderHud() {
     $('seedChip').style.display = (S.seeds > 0 || pendingSeeds() > 0 || S.cnt.prestiges > 0) ? '' : 'none';
 
     const c = CROPS[S.lastCrop];
-    $('cropBtn').innerHTML = icc(c.id) + ' <b>' + c.name + '</b> ▾';
+    $('cropBtn').innerHTML = icc(c.id) + ' <b>' + T(c.name) + '</b> ▾';
 
     // буст
     if (boostOn()) {
         $('boostBtn').classList.add('on');
-        $('boostBtn').innerHTML = icc('boost') + ' x2 · ' + Math.ceil((S.boostUntil-Date.now())/1000) + 'с';
+        $('boostBtn').innerHTML = icc('boost') + ' x2 · ' + Math.ceil((S.boostUntil-Date.now())/1000) + T('@ssec');
     } else {
         $('boostBtn').classList.remove('on');
-        $('boostBtn').innerHTML = icc('ad') + ' Доход x2';
+        $('boostBtn').innerHTML = icc('ad') + ' ' + T('Доход x2');
     }
     // дорастить
     const cd = Math.ceil((S.adGrowAt - Date.now())/1000);
     $('growBtn').disabled = cd > 0;
-    $('growBtn').innerHTML = cd > 0 ? icc('grow') + ' ' + cd + 'с' : icc('ad') + ' Дорастить всё';
+    $('growBtn').innerHTML = cd > 0 ? icc('grow') + ' ' + cd + T('@ssec') : icc('ad') + ' ' + T('Дорастить всё');
 
     // бейджи
     const tot = storeTotal();
@@ -228,10 +242,10 @@ function renderCropPick() {
     CROPS.forEach((c, i) => {
         if (!S.crops[i]) return;
         h += `<button class="cell pick ${i === S.lastCrop ? 'sel' : ''}" onclick="pickCrop(${i})">
-            <div class="big">${ic(c.id)}</div><small>${c.name}</small>
-            <small style="color:var(--ink-soft);font-size:10.5px">семя ${fmt(c.seed)} ${icc('coin')}</small></button>`;
+            <div class="big">${ic(c.id)}</div><small>${T(c.name)}</small>
+            <small style="color:var(--ink-soft);font-size:10.5px">${T('семя {n} {coin}', { n: fmt(c.seed), coin: icc('coin') })}</small></button>`;
     });
-    h += `<button class="cell pick" onclick="openShopSeeds()"><div class="big"><span>+</span></div><small>купить</small></button>`;
+    h += `<button class="cell pick" onclick="openShopSeeds()"><div class="big"><span>+</span></div><small>${T('купить')}</small></button>`;
     $('cropPickList').innerHTML = h;
 }
 function pickCrop(i) {
@@ -256,9 +270,9 @@ function shopAvail() {
 // характеристика работника на текущем уровне (или 1-м, если ещё не нанят)
 function workerStat(w) {
     const lvl = Math.max(1, S.workers[w.id]);
-    if (w.id === 'harv')   return 'собирает урожай раз в ' + (6 / Math.pow(1.5, lvl-1)).toFixed(1) + ' c';
-    if (w.id === 'sow')    return 'сажает растение раз в ' + (7 / Math.pow(1.5, lvl-1)).toFixed(1) + ' c';
-    if (w.id === 'seller') return 'продаёт до ' + (2 + lvl) + ' товаров раз в ' + (5 / Math.pow(1.4, lvl-1)).toFixed(1) + ' c';
+    if (w.id === 'harv')   return T('собирает урожай раз в {n} c', { n: (6 / Math.pow(1.5, lvl-1)).toFixed(1) });
+    if (w.id === 'sow')    return T('сажает растение раз в {n} c', { n: (7 / Math.pow(1.5, lvl-1)).toFixed(1) });
+    if (w.id === 'seller') return T('продаёт до {q} товаров раз в {n} c', { q: 2 + lvl, n: (5 / Math.pow(1.4, lvl-1)).toFixed(1) });
     return '';
 }
 function renderShop() {
@@ -276,13 +290,13 @@ function renderShop() {
             const sel = i === S.lastCrop;
             h += `<div class="row ${sel?'sel':''}">
                 <div class="ic">${ic(c.id)}</div>
-                <div class="info"><b>${c.name}</b>
-                <small>${fmtTime(cropGrow(c))} · семя ${fmt(c.seed)} · продажа ${fmt(Math.round(c.sell*sellMult()))} ${icc('coin')}</small></div>
+                <div class="info"><b>${T(c.name)}</b>
+                <small>${T('{time} · семя {seed} · продажа {sell} {coin}', { time: fmtTime(cropGrow(c)), seed: fmt(c.seed), sell: fmt(Math.round(c.sell*sellMult())), coin: icc('coin') })}</small></div>
                 ${un
-                    ? (sel ? '<span class="tag">выбрано</span>' : `<button class="btn" onclick="buyCrop(${i})">сажать</button>`)
+                    ? (sel ? `<span class="tag">${T('выбрано')}</span>` : `<button class="btn" onclick="buyCrop(${i})">${T('сажать')}</button>`)
                     : (zoneOk
-                        ? `<button class="btn ${S.coins>=c.unlock?'':'no'}" onclick="buyCrop(${i})">открыть · ${fmt(c.unlock)}</button>`
-                        : `<span class="tag lock">${icc('lock')} ${ZONES[c.zone].name}</span>`)}
+                        ? `<button class="btn ${S.coins>=c.unlock?'':'no'}" onclick="buyCrop(${i})">${T('открыть · {n}', { n: fmt(c.unlock) })}</button>`
+                        : `<span class="tag lock">${icc('lock')} ${T(ZONES[c.zone].name)}</span>`)}
             </div>`;
         });
     } else if (shopTab === 'ups') {
@@ -291,20 +305,20 @@ function renderShop() {
             const cost = upCost(u, lvl);
             h += `<div class="row">
                 <div class="ic">${ic(u.id)}</div>
-                <div class="info"><b>${u.name} <em>ур.${lvl}</em></b><small>${u.desc}</small></div>
+                <div class="info"><b>${T(u.name)} <em>${T('ур.{lvl}', { lvl })}</em></b><small>${T(u.desc)}</small></div>
                 <button class="btn ${S.coins>=cost?'':'no'}" onclick="buyUp('${u.id}')">${fmt(cost)} ${icc('coin')}</button>
             </div>`;
         }
     } else if (shopTab === 'work') {
-        h += `<div class="hint">Работники автоматизируют ферму: сеятель сажает, сборщик собирает, продавец продаёт склад за монеты. Благодаря им ферма работает и приносит доход даже офлайн.</div>`;
+        h += `<div class="hint">${T('Работники автоматизируют ферму: сеятель сажает, сборщик собирает, продавец продаёт склад за монеты. Благодаря им ферма работает и приносит доход даже офлайн.')}</div>`;
         for (const w of WORKERS) {
             const lvl = S.workers[w.id];
             const maxed = lvl >= w.max;
             const cost = workerCost(w, lvl);
             h += `<div class="row">
                 <div class="ic">${ic(w.id === 'seller' ? 'sell' : w.id)}</div>
-                <div class="info"><b>${w.name} <em>${lvl ? 'ур.'+lvl : ''}</em></b><small>${w.desc}<br>⚙ ${workerStat(w)}</small></div>
-                ${maxed ? '<span class="tag">макс</span>'
+                <div class="info"><b>${T(w.name)} <em>${lvl ? T('ур.{lvl}', { lvl }) : ''}</em></b><small>${T(w.desc)}<br>⚙ ${workerStat(w)}</small></div>
+                ${maxed ? `<span class="tag">${T('макс')}</span>`
                         : `<button class="btn ${S.coins>=cost?'':'no'}" onclick="buyWorker('${w.id}')">${fmt(cost)} ${icc('coin')}</button>`}
             </div>`;
         }
@@ -316,9 +330,9 @@ function renderShop() {
             const pr = APRODS[a.prod];
             h += `<div class="row">
                 <div class="ic">${ic(a.id)}</div>
-                <div class="info"><b>${a.name} <em>x${n}</em></b>
-                <small>${icc(pr.id)} ${pr.name} каждые ${fmtTime(a.every)} · цена ${fmt(Math.round(pr.sell*sellMult()))} ${icc('coin')}</small></div>
-                ${maxed ? '<span class="tag">макс</span>'
+                <div class="info"><b>${T(a.name)} <em>x${n}</em></b>
+                <small>${icc(pr.id)} ${T('{prod} каждые {time} · цена {price} {coin}', { prod: T(pr.name), time: fmtTime(a.every), price: fmt(Math.round(pr.sell*sellMult())), coin: icc('coin') })}</small></div>
+                ${maxed ? `<span class="tag">${T('макс')}</span>`
                         : `<button class="btn ${S.coins>=cost?'':'no'}" onclick="buyAnimal('${a.id}')">${fmt(cost)} ${icc('coin')}</button>`}
             </div>`;
         }
@@ -329,19 +343,19 @@ function renderShop() {
 // ---------- Склад ----------
 function renderBarn() {
     const tot = storeTotal(), cap = whCap();
-    $('barnCap').innerHTML = `Склад: <b>${tot} / ${cap}</b>`;
+    $('barnCap').innerHTML = T('Склад: <b>{tot} / {cap}</b>', { tot, cap });
     $('barnBar').style.width = Math.min(100, tot/cap*100) + '%';
     const box = $('barnList');
     const ids = Object.keys(S.store);
-    if (!ids.length) { box.innerHTML = '<div class="empty">Пусто. Собери урожай с грядок!</div>'; return; }
+    if (!ids.length) { box.innerHTML = `<div class="empty">${T('Пусто. Собери урожай с грядок!')}</div>`; return; }
     let h = '';
     for (const id of ids) {
         const c = CROPS.find(x=>x.id===id) || APRODS.find(x=>x.id===id);
         h += `<div class="row">
             <div class="ic">${ic(id)}</div>
-            <div class="info"><b>${c.name} x${S.store[id]}</b><small>${fmt(priceOf(id))} ${icc('coin')} за штуку</small></div>
+            <div class="info"><b>${T(c.name)} x${S.store[id]}</b><small>${T('{n} {coin} за штуку', { n: fmt(priceOf(id)), coin: icc('coin') })}</small></div>
             <button class="btn" onclick="sellStore('${id}',1)">1</button>
-            <button class="btn" onclick="sellStore('${id}')">все · ${fmt(priceOf(id)*S.store[id])}</button>
+            <button class="btn" onclick="sellStore('${id}')">${T('все')} · ${fmt(priceOf(id)*S.store[id])}</button>
         </div>`;
     }
     box.innerHTML = h;
@@ -359,8 +373,8 @@ function renderOrders() {
             if (!o) {   // слот ждёт нового заказа (ограничение появления)
                 h += `<div class="row" style="opacity:.6">
                     <div class="ic">${ic('orders')}</div>
-                    <div class="info"><b>Новый заказ скоро…</b>
-                    <small>появляются до ${ORDERS_PER_HOUR} в час</small></div>
+                    <div class="info"><b>${T('Новый заказ скоро…')}</b>
+                    <small>${T('появляются до {n} в час', { n: ORDERS_PER_HOUR })}</small></div>
                 </div>`;
                 return;
             }
@@ -369,32 +383,32 @@ function renderOrders() {
             const ok = have >= o.qty;
             h += `<div class="row">
                 <div class="ic">${ic(c.id)}</div>
-                <div class="info"><b>${c.name} x${o.qty}</b>
-                <small>есть ${have}/${o.qty} · награда ${fmt(o.reward)} ${icc('coin')}${o.seed ? ' + '+icc('seed') : ''}</small></div>
-                <button class="btn ${ok?'':'no'}" onclick="fulfillOrder(${k})">сдать</button>
-                <button class="btn ghost ${left>0?'':'no'}" onclick="skipOrder(${k})" title="Смен осталось: ${left}"><span class="ci">${ic('refresh')}</span></button>
+                <div class="info"><b>${T(c.name)} x${o.qty}</b>
+                <small>${T('есть {have}/{qty} · награда {n} {coin}', { have, qty: o.qty, n: fmt(o.reward), coin: icc('coin') })}${o.seed ? ' + '+icc('seed') : ''}</small></div>
+                <button class="btn ${ok?'':'no'}" onclick="fulfillOrder(${k})">${T('сдать')}</button>
+                <button class="btn ghost ${left>0?'':'no'}" onclick="skipOrder(${k})" title="${T('Смен осталось: {left}', { left })}"><span class="ci">${ic('refresh')}</span></button>
             </div>`;
         });
-        h += `<div style="text-align:center;color:var(--ink-soft);font-size:12px;padding:6px 0 2px">Смена задания: осталось ${left} из ${SKIP_MAX} за 2 часа</div>`;
+        h += `<div style="text-align:center;color:var(--ink-soft);font-size:12px;padding:6px 0 2px">${T('Смена задания: осталось {left} из {max} за 2 часа', { left, max: SKIP_MAX })}</div>`;
     } else {
         S.quests.forEach((q, k) => {
             const p = qProg(q);
             const done = p >= q.n;
             h += `<div class="row">
                 <div class="ic">${ic(q.claimed ? 'check' : done ? 'gift' : 'quest')}</div>
-                <div class="info"><b>${q.name}</b>
+                <div class="info"><b>${T(q.name)}</b>
                 <small>${Math.min(p,q.n)}/${q.n} · ${fmt(q.reward)} ${icc('coin')}</small>
                 <div class="qbar"><i style="width:${Math.min(100,p/q.n*100)}%"></i></div></div>
                 ${q.claimed ? '<span class="tag">✓</span>'
-                            : `<button class="btn ${done?'':'no'}" onclick="claimQuest(${k})">забрать</button>`}
+                            : `<button class="btn ${done?'':'no'}" onclick="claimQuest(${k})">${T('забрать')}</button>`}
             </div>`;
         });
         const allDone = S.quests.every(q=>q.claimed);
         h += `<div class="row chest">
             <div class="ic">${ic(S.chestClaimed ? 'check' : 'chest')}</div>
-            <div class="info"><b>Сундук дня</b><small>Выполни все 3 квеста · монеты + семя ${icc('seed')}</small></div>
+            <div class="info"><b>${T('Сундук дня')}</b><small>${T('Выполни все 3 квеста · монеты + семя {seed}', { seed: icc('seed') })}</small></div>
             ${S.chestClaimed ? '<span class="tag">✓</span>'
-                             : `<button class="btn ${allDone?'':'no'}" onclick="claimChest()">открыть</button>`}
+                             : `<button class="btn ${allDone?'':'no'}" onclick="claimChest()">${T('открыть сундук')}</button>`}
         </div>`;
     }
     box.innerHTML = h;
@@ -410,10 +424,10 @@ function renderAlbum() {
         h += '<div class="grid">';
         CROPS.forEach((c, i) => {
             h += S.disc[i]
-                ? `<div class="cell"><div class="big">${ic(c.id)}</div><small>${c.name}</small></div>`
+                ? `<div class="cell"><div class="big">${ic(c.id)}</div><small>${T(c.name)}</small></div>`
                 : `<div class="cell dark"><div class="big"><span>?</span></div><small>???</small></div>`;
         });
-        h += '</div><div class="hint">Открыто культур: ' + S.disc.filter(x=>x).length + ' / ' + CROPS.length + '</div>';
+        h += '</div><div class="hint">' + T('Открыто культур: {n} / {max}', { n: S.disc.filter(x=>x).length, max: CROPS.length }) + '</div>';
     } else if (albumTab === 'rank') {
         renderRank(box);   // асинхронно: подгружает лидерборд Яндекса
         return;
@@ -423,7 +437,7 @@ function renderAlbum() {
             const p = Math.min(S.cnt[a.cnt], a.n);
             h += `<div class="row ${got?'':'dim'}">
                 <div class="ic">${ic(got?'trophy':'lock')}</div>
-                <div class="info"><b>${a.name}</b><small>${a.desc} · ${got?'получено':p+'/'+a.n} · +${a.seed} ${icc('seed')}</small></div>
+                <div class="info"><b>${T(a.name)}</b><small>${T(a.desc)} · ${got?T('получено'):p+'/'+a.n} · +${a.seed} ${icc('seed')}</small></div>
             </div>`;
         }
     }
@@ -433,27 +447,27 @@ function albumFlash() { /* хук на будущее — вспышка в ал
 // рейтинг игроков по сумме золотых семян (только на платформе Яндекс Игр)
 function renderRank(box) {
     if (!ysdk || typeof fetchLeaderboard !== 'function') {
-        box.innerHTML = '<div class="empty">Рейтинг доступен в приложении Яндекс Игр.</div>';
+        box.innerHTML = `<div class="empty">${T('Рейтинг доступен в приложении Яндекс Игр.')}</div>`;
         return;
     }
-    box.innerHTML = '<div class="empty">Загрузка рейтинга…</div>';
+    box.innerHTML = `<div class="empty">${T('Загрузка рейтинга…')}</div>`;
     fetchLeaderboard(res => {
         if (albumTab !== 'rank') return;                       // пользователь ушёл на другую вкладку
         if (!res || !res.entries || !res.entries.length) {
-            box.innerHTML = '<div class="empty">Пока пусто. Собери золотые семена и стань первым!</div>';
+            box.innerHTML = `<div class="empty">${T('Пока пусто. Собери золотые семена и стань первым!')}</div>`;
             return;
         }
         const ur = res.userRank || 0;
         let h = '';
         for (const e of res.entries) {
             const me = ur && e.rank === ur;
-            const nm = (e.player && e.player.publicName) || 'Игрок';
+            const nm = (e.player && e.player.publicName) || T('Игрок');
             let av = '';
             try { av = e.player && e.player.getAvatarSrc ? e.player.getAvatarSrc('small') : ''; } catch(x) {}
             h += `<div class="row ${me ? 'sel' : ''}">
                 <div class="lbRank">${e.rank}</div>
                 ${av ? `<img class="lbAva" src="${av}" alt="">` : `<div class="ic">${ic('star')}</div>`}
-                <div class="info"><b>${nm}${me ? ' · ты' : ''}</b><small>${fmt(e.score)} ${icc('seed')}</small></div>
+                <div class="info"><b>${nm}${me ? ' · ' + T('ты') : ''}</b><small>${fmt(e.score)} ${icc('seed')}</small></div>
             </div>`;
         }
         box.innerHTML = h;
@@ -463,15 +477,16 @@ function renderRank(box) {
 // ---------- Престиж ----------
 function showPrestige() {
     const p = pendingSeeds();
-    $('prestigeInfo').innerHTML = `
-        <p>Начни <b>новый сезон</b>: ферма, монеты и улучшения сбросятся,<br>
-        а ты получишь <b class="gold">+${p} ${icc('seed')} золотых семян</b>.</p>
-        <p>Каждое семя даёт <b>+10% к доходу навсегда</b>.<br>
-        Сейчас у тебя ${S.seeds} ${icc('seed')} (бонус +${S.seeds*10}%).</p>
-        <p><small>Всего заработано: ${fmt(S.lifeEarned)} ${icc('coin')}.<br>
-        До следующего семени: ${fmt(Math.max(0, SEED_BASE*Math.pow(seedsClaimed()+p+1,2) - S.lifeEarned))} ${icc('coin')}.</small></p>`;
+    const nextAt = Math.max(0, SEED_BASE*Math.pow(seedsClaimed()+p+1,2) - S.lifeEarned);
+    $('prestigeInfo').innerHTML =
+        '<p>' + T('Начни <b>новый сезон</b>: ферма, монеты и улучшения сбросятся,<br>а ты получишь <b class="gold">+{p} {seed} золотых семян</b>.',
+                  { p, seed: icc('seed') }) + '</p>' +
+        '<p>' + T('Каждое семя даёт <b>+10% к доходу навсегда</b>.<br>Сейчас у тебя {n} {seed} (бонус +{b}%).',
+                  { n: S.seeds, seed: icc('seed'), b: S.seeds*10 }) + '</p>' +
+        '<p><small>' + T('Всего заработано: {all} {coin}.<br>До следующего семени: {next} {coin}.',
+                  { all: fmt(S.lifeEarned), next: fmt(nextAt), coin: icc('coin') }) + '</small></p>';
     $('prestigeGo').disabled = p <= 0;
-    $('prestigeGo').innerHTML = p > 0 ? icc('star') + ' Новый сезон (+' + p + ')' : 'Пока рано…';
+    $('prestigeGo').innerHTML = p > 0 ? icc('star') + ' ' + T('Новый сезон (+{p})', { p }) : T('Пока рано…');
     openModal('prestigeModal');
     sfx('click');
 }
@@ -479,29 +494,31 @@ function showPrestige() {
 // ---------- Офлайн-модалка ----------
 function showOfflineModal(coins, store, t) {
     const parts = [];
-    if (coins > 0) parts.push(`продавец наторговал <b>${fmt(coins)} ${icc('coin')}</b>`);
-    if (store > 0) parts.push(`работники собрали <b>${store} ${icc('barn')}</b> на склад`);
-    $('offlineInfo').innerHTML = `Пока тебя не было (${fmtTime(t)}),<br>` + (parts.join('<br>и ') || 'ничего не изменилось') + '!';
-    $('offlineTake').textContent = 'Отлично';
+    if (coins > 0) parts.push(T('продавец наторговал <b>{n} {coin}</b>', { n: fmt(coins), coin: icc('coin') }));
+    if (store > 0) parts.push(T('работники собрали <b>{n} {barn}</b> на склад', { n: store, barn: icc('barn') }));
+    $('offlineInfo').innerHTML = T('Пока тебя не было ({t}),<br>', { t: fmtTime(t) })
+        + (parts.join('<br>' + T('и ')) || T('ничего не изменилось')) + '!';
+    $('offlineTake').textContent = T('Отлично');
     $('offlineTake').onclick = () => closeModal('offlineModal');
     $('offlineX2').style.display = '';
-    $('offlineX2').innerHTML = icc('ad') + 'Продолжить x2';
+    $('offlineX2').innerHTML = icc('ad') + T('Продолжить x2');
     $('offlineX2').onclick = () => showRewarded(() => { offlineBonus(); closeModal('offlineModal'); });
     openModal('offlineModal');
 }
 
 // ---------- Туториал ----------
-const TUT_TEXT = [
-    'Тапни по грядке,<br>чтобы посадить <i class="ci">' + ICONS.wheat + '</i>',
-    'Подожди чуть-чуть…<br>и собери урожай!',
-    'Открой склад <i class="ci">' + ICONS.barn + '</i><br>и продай урожай',
+// функция, а не const-массив: язык выбирается уже после загрузки скриптов
+const tutText = () => [
+    T('Тапни по грядке,<br>чтобы посадить {icon}', { icon: '<i class="ci">' + ICONS.wheat + '</i>' }),
+    T('Подожди чуть-чуть…<br>и собери урожай!'),
+    T('Открой склад {icon}<br>и продай урожай', { icon: '<i class="ci">' + ICONS.barn + '</i>' }),
     '',
 ];
 function renderTut() {
     const el = $('tut');
     if (S.tut >= 3) { el.style.display = 'none'; return; }
     el.style.display = '';
-    $('tutText').innerHTML = TUT_TEXT[S.tut];
+    $('tutText').innerHTML = tutText()[S.tut];
     posTut();
 }
 function posTut() {

@@ -151,7 +151,7 @@ const AD_GROW_CD = 300;           // «дорастить всё», сек ку�
 function fmt(n) {
     n = Math.floor(n);
     if (n < 1000) return '' + n;
-    const units = ['К','М','Б','Т'];
+    const units = T('@units').split(',');
     let u = -1;
     let x = n;
     while (x >= 1000 && u < units.length-1) { x /= 1000; u++; }
@@ -159,7 +159,8 @@ function fmt(n) {
 }
 function fmtTime(s) {
     s = Math.ceil(s);
-    if (s < 60) return s + ' сек';
-    if (s < 3600) return Math.floor(s/60) + ' мин' + (s%60 ? ' ' + s%60 + 'с' : '');
-    return Math.floor(s/3600) + ' ч ' + Math.floor(s%3600/60) + ' мин';
+    const SEC = T('@sec'), SS = T('@ssec'), MIN = T('@min'), HR = T('@hour');
+    if (s < 60) return s + ' ' + SEC;
+    if (s < 3600) return Math.floor(s/60) + ' ' + MIN + (s%60 ? ' ' + s%60 + SS : '');
+    return Math.floor(s/3600) + ' ' + HR + ' ' + Math.floor(s%3600/60) + ' ' + MIN;
 }

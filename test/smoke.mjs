@@ -4,7 +4,7 @@ import { chromium } from 'playwright';
 
 const URL = 'http://localhost:8347/';
 const errors = [];
-const browser = await chromium.launch();
+const browser = await chromium.launch({ executablePath: process.env.PW_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
 const page = await browser.newPage({ viewport: { width: 420, height: 800 } });
 // шум Yandex SDK вне платформы — не наша ошибка
 const sdkNoise = t => /No parent to post message|appId from environment|YandexGamesSDKEnvironment/.test(t);
