@@ -97,6 +97,7 @@ const EN = {
 
     // ---------- склад ----------
     'Склад: <b>{tot} / {cap}</b>':'Barn: <b>{tot} / {cap}</b>',
+    'Склад: 0 / 60':'Barn: 0 / 60',       // стартовое значение в разметке
     'Пусто. Собери урожай с грядок!':'Empty. Go harvest your plots!',
     '{n} {coin} за штуку':'{n} {coin} each',
 
@@ -216,10 +217,13 @@ function detectLang(sdk) {
     } catch (e) {}
     return pickLang((navigator.languages && navigator.languages[0]) || navigator.language);
 }
-function setLang(l) {
+// remember — только для явного выбора игрока. Автоопределённый язык сохранять
+// нельзя: он осел бы в localStorage и на следующем заходе перекрыл язык
+// платформы, то есть автоопределение фактически работало бы один раз.
+function setLang(l, remember) {
     LANG = (l === 'en') ? 'en' : 'ru';
     try { document.documentElement.lang = LANG; } catch (e) {}
-    try { localStorage.setItem('tsprout_lang', LANG); } catch (e) {}
+    if (remember) { try { localStorage.setItem('tsprout_lang', LANG); } catch (e) {} }
 }
 
 // Статический текст в index.html помечен data-t — переводим одним проходом.

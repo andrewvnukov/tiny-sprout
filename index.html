@@ -282,7 +282,7 @@ button { font-family:inherit; color:var(--ink); }
 <div class="sheet ui" id="barnSheet">
     <h2><span class="fico" data-ico="barn"></span><span data-t="Склад">Склад</span></h2><button class="close">✕</button>
     <div class="capbar">
-        <div id="barnCap">Склад: 0 / 60</div>
+        <div id="barnCap" data-t="Склад: 0 / 60">Склад: 0 / 60</div>
         <div class="capwrap"><i id="barnBar" style="width:0%"></i></div>
     </div>
     <div class="list" id="barnList"></div>
@@ -316,8 +316,8 @@ button { font-family:inherit; color:var(--ink); }
         <div class="sndRow"><span data-t="Музыка">Музыка</span><input type="range" id="musSlider" min="0" max="100" step="1" value="50"></div>
         <div class="sndRow"><span data-t="Язык">Язык</span>
             <div class="langSel">
-                <button class="langBtn" data-lang="ru">Рус</button>
-                <button class="langBtn" data-lang="en">Eng</button>
+                <button class="langBtn" data-lang="ru">RU</button>
+                <button class="langBtn" data-lang="en">EN</button>
             </div>
         </div>
         <button class="bbtn close2" data-t="Готово">Готово</button>
@@ -328,7 +328,7 @@ button { font-family:inherit; color:var(--ink); }
     <div class="mbox">
         <h2><span class="fico" data-ico="star"></span><span data-t="Новый сезон">Новый сезон</span></h2>
         <div id="prestigeInfo"></div>
-        <button class="bbtn" id="prestigeGo">Новый сезон</button>
+        <button class="bbtn" id="prestigeGo" data-t="Новый сезон">Новый сезон</button>
         <button class="bbtn close2" data-t="Позже">Позже</button>
     </div>
 </div>
@@ -337,8 +337,8 @@ button { font-family:inherit; color:var(--ink); }
     <div class="mbox">
         <h2><span class="fico" data-ico="moon"></span><span data-t="С возвращением!">С возвращением!</span></h2>
         <p id="offlineInfo"></p>
-        <button class="bbtn" id="offlineX2"><span class="ci" data-ico="ad"></span>Забрать x2</button>
-        <button class="bbtn" id="offlineTake">Забрать</button>
+        <button class="bbtn" id="offlineX2" data-t="Забрать x2"><span class="ci" data-ico="ad"></span>Забрать x2</button>
+        <button class="bbtn" id="offlineTake" data-t="Забрать">Забрать</button>
     </div>
 </div>
 

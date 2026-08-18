@@ -793,6 +793,30 @@ window.render_game_to_text = () => JSON.stringify({
 window.advanceTime = ms => { simulate(ms/1000); renderHud(); };
 
 // ---------- Загрузка ----------
+// GameReady: платформа требует, чтобы сигнал готовности уходил ДО того, как
+// игра станет доступна для действий игрока. Поэтому ready() вызывается в конце
+// boot(), но перед показом интерфейса, и ровно один раз на любом пути запуска.
+// Если игра поднялась по фолбэку, SDK ещё нет — тогда сигнал уходит позже,
+// как только SDK ответит; _readyWanted помнит, что игра уже готова.
+let _readyWanted = false, _readySent = false;
+function signalReady() {
+    _readyWanted = true;
+    if (_readySent) return;
+    try {
+        const api = ysdk && ysdk.features && ysdk.features.LoadingAPI;
+        if (api && typeof api.ready === 'function') { api.ready(); _readySent = true; }
+    } catch(e) { _readySent = true; }   // повторять бессмысленно
+}
+// SDK ответил уже после запуска по фолбэку — уточняем язык по данным платформы
+function applySdkLang() {
+    if (!booted) return;
+    const l = detectLang(ysdk);
+    if (l === LANG) return;
+    setLang(l);
+    applyStaticT();
+    renderHud();
+    renderTut();
+}
 function boot(raw) {
     setLang(detectLang(ysdk));   // до initUI: вся статика и рендеры уже на нужном языке
     applyStaticT();
@@ -806,6 +830,8 @@ function boot(raw) {
     renderHud();
     renderTut();
     persist(true);
+    signalReady();                            // сначала сообщаем платформе…
+    document.body.classList.add('ready');     // …и только потом открываем UI
 }
 (function start() {
     setShowSplashScreen(false);
@@ -824,16 +850,22 @@ function boot(raw) {
     let done = false;
     const fallback = () => { if (!done) { done = true; boot(localRaw); } };
     if (window.YaGames) {
-        setTimeout(fallback, 4000);
+        // Ждём SDK, а не стартуем по короткому таймауту: до его ответа неизвестен
+        // язык платформы, а игра, ставшая доступной раньше сигнала GameReady,
+        // нарушает требования. Пока мы молчим, площадка держит свой лоадер.
+        // Таймаут — только страховка от намертво зависшего SDK.
+        setTimeout(fallback, 15000);
         YaGames.init().then(sdk => {
             ysdk = sdk;
             return sdk.getPlayer().then(p => p.getData(['save'])).then(d => {
-                // если SDK ответил позже фолбэка, игра уже запущена с локального
-                // сейва — но лидерборд всё равно нужно поднять
                 if (!done) {
                     done = true;
-                    boot(d && d.save ? d.save : localRaw);
-                    try { ysdk.features.LoadingAPI && ysdk.features.LoadingAPI.ready(); } catch(e) {}
+                    boot(d && d.save ? d.save : localRaw);   // boot сам отправит GameReady
+                } else {
+                    // фолбэк уже поднял игру на локальном сейве: досылаем сигнал
+                    // готовности и уточняем язык, раз платформа наконец ответила
+                    if (_readyWanted) signalReady();
+                    applySdkLang();
                 }
                 initLeaderboard();
             });

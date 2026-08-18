@@ -77,7 +77,8 @@ function uiBlocked() {
 
 // ---------- Инициализация ----------
 function initUI() {
-    document.body.classList.add('ready');
+    // класс ready сюда НЕ ставим: интерфейс показывает boot() — уже после
+    // сигнала GameReady, иначе игра станет кликабельной раньше времени
     // подставить SVG-иконки во все статичные плейсхолдеры
     for (const el of document.querySelectorAll('[data-ico]'))
         el.innerHTML = ic(el.dataset.ico);
@@ -117,7 +118,7 @@ function initUI() {
             if (b.dataset.lang === LANG) return;
             sfx('click');
             persist(true);
-            setLang(b.dataset.lang);
+            setLang(b.dataset.lang, true);   // явный выбор — запоминаем
             const u = new URL(location.href);
             u.searchParams.delete('lang');   // выбор уже сохранён в localStorage
             location.replace(u.toString());
