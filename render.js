@@ -1076,7 +1076,7 @@ function drawZoneSign(z) {
     drawCircle(lp.add(vec2(0, .1)), .2, new Color(0, 0, 0, 0), .05, C('#8a6749'));
     drawRect(lp, vec2(.27, .23), C('#8a6749'));
     drawCircle(lp.add(vec2(0, .01)), .06, C('#cca87a'));
-    drawText(zone.name, p.add(vec2(.24, .2)), .34, C(INKT));
+    drawText(T(zone.name), p.add(vec2(.24, .2)), .34, C(INKT));
     drawCoin(p.add(vec2(-.5 - fmt(zone.unlock).length * .09, -.24)), .22);
     drawText(fmt(zone.unlock), p.add(vec2(.18, -.21)), .3, can ? C('#4e7e3e') : C('#b0604a'));
 }

@@ -156,6 +156,31 @@ for (const [sdkLang, want] of [['en', 'en'], ['ru', 'ru'], ['tr', 'en'], ['kk', 
     await ctx.close();
 }
 
+// ---------- п. 8.2.3: кириллицы нет и в тексте, нарисованном на канвасе ----------
+// Проверка DOM сюда не достаёт: таблички зон и всплывающий текст рисует
+// LittleJS через drawText, поэтому перехватываем сам вызов.
+{
+    const { ctx, page } = await launch({ lang: 'en' });
+    const found = await page.evaluate(async () => {
+        const seen = new Set();
+        const orig = window.drawText;
+        window.drawText = function (text, ...rest) {
+            if (typeof text === 'string' && text) seen.add(text);
+            return orig.apply(this, [text, ...rest]);
+        };
+        // состояние, в котором видны таблички закрытых зон и всплывашки
+        S.coins = 5e5;
+        S.plots.forEach(p => { p.c = 0; p.t = 999; });
+        harvestPlot(0);
+        // даём отрисоваться нескольким кадрам
+        await new Promise(r => setTimeout(r, 1200));
+        window.drawText = orig;
+        return [...seen].filter(t => /[А-Яа-яЁё]/.test(t));
+    });
+    ok('на канвасе нет русского текста в английской локали', found.length === 0, found);
+    await ctx.close();
+}
+
 // ---------- п. 5.1.3: название игры одинаково везде ----------
 {
     const { ctx, page } = await launch({ lang: 'en' });
