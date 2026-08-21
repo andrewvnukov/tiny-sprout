@@ -27,8 +27,16 @@ const MOCK = ({ lang, sdkDelay, noSdk }) => {
     });
 
     if (noSdk) return;
+    // Считаем обращения к ysdk.environment.i18n.lang: дебаг-панель площадки
+    // помечает игру «I18N is not used» именно по отсутствию чтения свойства.
+    window.__i18nReads = 0;
+    const i18n = {};
+    Object.defineProperty(i18n, 'lang', {
+        get() { window.__i18nReads++; return lang; },
+        enumerable: true,
+    });
     const sdk = {
-        environment: { i18n: { lang } },
+        environment: { i18n },
         getPlayer: () => Promise.resolve({
             isAuthorized: () => true, getData: () => Promise.resolve({}), setData: () => Promise.resolve(),
         }),
@@ -81,6 +89,48 @@ for (const [sdkLang, want] of [['en', 'en'], ['ru', 'ru'], ['tr', 'en'], ['kk', 
     const { ctx, page } = await launch({ lang: sdkLang });
     ok(`SDK lang=${sdkLang} -> ${want}`, await page.evaluate(() => LANG) === want,
        await page.evaluate(() => LANG));
+    await ctx.close();
+}
+
+// ---------- п. 2.14: язык платформы читается на каждом запуске ----------
+// Дебаг-панель площадки показывает «I18N is not used», если игра ни разу не
+// обратилась к ysdk.environment.i18n.lang — даже когда язык в итоге берётся
+// из сохранённого выбора игрока.
+{
+    const { ctx, page } = await launch({ lang: 'ru' });
+    ok('обычный запуск: свойство прочитано',
+       await page.evaluate(() => __i18nReads) >= 1,
+       await page.evaluate(() => __i18nReads));
+    await ctx.close();
+}
+{
+    const ctx = await browser.newContext({ viewport: { width: 900, height: 760 } });
+    const page = await ctx.newPage();
+    await page.route('https://yandex.ru/**', r => r.abort());
+    // у игрока уже есть ручной выбор языка — он победит, но SDK всё равно должен быть опрошен
+    await page.addInitScript(() => {
+        try { localStorage.setItem('tsprout_lang', 'en'); } catch (e) {}
+    });
+    await page.addInitScript(MOCK, { lang: 'ru' });
+    await page.goto(BASE);
+    await page.waitForFunction(() => typeof LANG !== 'undefined' && window.render_game_to_text, null, { timeout: 30000 });
+    await page.waitForTimeout(600);
+    ok('при сохранённом выборе свойство всё равно прочитано',
+       await page.evaluate(() => __i18nReads) >= 1,
+       await page.evaluate(() => __i18nReads));
+    ok('ручной выбор игрока при этом сохраняет приоритет',
+       await page.evaluate(() => LANG) === 'en');
+    await ctx.close();
+}
+{
+    const { ctx, page } = await launch({ lang: 'ru' });
+    // ?lang= в адресе — тоже не повод пропускать опрос платформы
+    await page.goto(BASE + '?lang=en');
+    await page.waitForFunction(() => typeof LANG !== 'undefined' && window.render_game_to_text, null, { timeout: 30000 });
+    await page.waitForTimeout(600);
+    ok('при ?lang= свойство всё равно прочитано',
+       await page.evaluate(() => __i18nReads) >= 1,
+       await page.evaluate(() => __i18nReads));
     await ctx.close();
 }
 

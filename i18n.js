@@ -203,6 +203,17 @@ function pickLang(code) {
     return RU_LOCALES.indexOf(c) >= 0 ? 'ru' : 'en';
 }
 function detectLang(sdk) {
+    // Язык платформы читаем ВСЕГДА и первым делом, даже если ниже победит
+    // сохранённый выбор игрока. Если выйти раньше, обращения к
+    // ysdk.environment.i18n.lang не произойдёт вовсе — и дебаг-панель площадки
+    // покажет «I18N is not used», то есть автоопределение будет считаться
+    // нереализованным (п. 2.14).
+    let platform = null;
+    try {
+        const l = sdk && sdk.environment && sdk.environment.i18n && sdk.environment.i18n.lang;
+        if (l) platform = pickLang(l);
+    } catch (e) {}
+
     try {
         const q = new URLSearchParams(location.search).get('lang');
         if (q === 'ru' || q === 'en') return q;          // явный оверрайд (тесты, скриншоты)
@@ -211,10 +222,7 @@ function detectLang(sdk) {
         const saved = localStorage.getItem('tsprout_lang');
         if (saved === 'ru' || saved === 'en') return saved;
     } catch (e) {}
-    try {
-        const l = sdk && sdk.environment && sdk.environment.i18n && sdk.environment.i18n.lang;
-        if (l) return pickLang(l);
-    } catch (e) {}
+    if (platform) return platform;
     return pickLang((navigator.languages && navigator.languages[0]) || navigator.language);
 }
 // remember — только для явного выбора игрока. Автоопределённый язык сохранять
