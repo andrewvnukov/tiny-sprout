@@ -54,7 +54,11 @@ const todayStr = () => new Date().toISOString().slice(0,10);
 
 // ---------- Сейвы ----------
 const SAVE_KEY = 'tinysprout';
-function persist(force) {
+// flush=false (значение по умолчанию у SDK) — запись копится и уходит пачкой,
+// это бережёт лимит облачных сохранений (100 запросов за 5 минут). Минус в том,
+// что накопленное может не успеть уйти, если игрок закрывает вкладку, — поэтому
+// при уходе со страницы дожимаем немедленно, см. flushSave().
+function persist(force, flush) {
     if (!booted) return;
     if (!force && saveT > 0) return;
     saveT = 10;
@@ -62,9 +66,18 @@ function persist(force) {
     const raw = JSON.stringify(S);
     try { localStorage.setItem(SAVE_KEY, raw); } catch(e) {}
     if (ysdk) {
-        try { ysdk.getPlayer().then(p => p.setData({ save: raw })).catch(()=>{}); } catch(e) {}
+        try { ysdk.getPlayer().then(p => p.setData({ save: raw }, !!flush)).catch(()=>{}); } catch(e) {}
     }
     submitScore();   // обновить очки в лидерборде, если изменились
+}
+// Немедленная отправка в облако при сворачивании/закрытии. Ограничена по
+// частоте: переключение вкладок туда-сюда не должно жечь лимит запросов.
+let _flushedAt = 0;
+function flushSave() {
+    if (!booted || !ysdk) return;
+    if (Date.now() - _flushedAt < 3000) return;
+    _flushedAt = Date.now();
+    persist(true, true);
 }
 function restore(raw) {
     const f = freshState();

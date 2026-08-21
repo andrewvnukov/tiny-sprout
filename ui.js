@@ -143,9 +143,12 @@ function initUI() {
     // заранее генерируем буфер музыки (~1 c CPU) в простое, чтобы первый тап не лагал
     setTimeout(() => { try { if (!musicBuf) musicBuf = makeMusic(); } catch(e) {} }, 2000);
 
-    // пауза звука при сворачивании/выходе из приложения (иначе музыка играет в фоне)
-    document.addEventListener('visibilitychange', () => { if (document.hidden) audioSuspend(); else audioResume(); });
-    window.addEventListener('pagehide', audioSuspend);
+    // пауза звука при сворачивании/выходе из приложения (иначе музыка играет в фоне),
+    // заодно дожимаем облачный сейв: очередь SDK может не успеть уйти сама
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) { audioSuspend(); flushSave(); } else audioResume();
+    });
+    window.addEventListener('pagehide', () => { audioSuspend(); flushSave(); });
     window.addEventListener('pageshow', audioResume);
 
     setInterval(uiTick, 500);
