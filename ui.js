@@ -75,6 +75,11 @@ function uiBlocked() {
         document.querySelector('.sheet.open, .modal.open') !== null;
 }
 
+// Правый клик и долгий тап не должны открывать меню браузера поверх игры.
+// Вешаем сразу при загрузке скрипта, а не в initUI: канвас существует ещё до
+// boot(), и до него меню успело бы открыться.
+document.addEventListener('contextmenu', e => e.preventDefault());
+
 // ---------- Инициализация ----------
 function initUI() {
     // класс ready сюда НЕ ставим: интерфейс показывает boot() — уже после

@@ -509,9 +509,15 @@ function doPrestige() {
 function showRewarded(cb) {
     if (ysdk && ysdk.adv) {
         try {
+            let paid = false;
+            const pay = () => { if (!paid) { paid = true; cb(); } };
             ysdk.adv.showRewardedVideo({ callbacks: {
-                onRewarded: cb,
-                onError: () => cb(),   // локально/ошибка — награду всё равно даём
+                // на время ролика игра обязана молчать: страница фокус не теряет,
+                // поэтому visibilitychange здесь не сработает и глушим вручную
+                onOpen:     () => audioSuspend(),
+                onRewarded: pay,
+                onClose:    () => audioResume(),
+                onError:    () => { audioResume(); pay(); },   // ошибка — награду всё равно даём
             }});
             return;
         } catch(e) {}
