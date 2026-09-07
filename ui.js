@@ -543,11 +543,21 @@ function showOfflineModal(coins, store, t) {
     $('offlineInfo').innerHTML = T('Пока тебя не было ({t}),<br>', { t: fmtTime(t) })
         + (parts.join('<br>' + T('и ')) || T('ничего не изменилось')) + '!';
     $('offlineTake').textContent = T('Отлично');
-    $('offlineTake').onclick = () => closeModal('offlineModal');
+    // возвращение из офлайна — тоже естественная пауза: игрок ещё ничего не начал
+    $('offlineTake').onclick = () => { closeModal('offlineModal'); setTimeout(breakAd, 400); };
     $('offlineX2').style.display = '';
     $('offlineX2').innerHTML = icc('ad') + T('Продолжить x2');
     $('offlineX2').onclick = () => showRewarded(() => { offlineBonus(); closeModal('offlineModal'); });
     openModal('offlineModal');
+}
+
+// ---------- Ярлык на главный экран ----------
+function showShortcutModal() {
+    $('shortcutBonus').innerHTML = T('За установку — <b class="gold">+{n} {seed}</b>.',
+        { n: SHORTCUT_REWARD, seed: icc('seed') });
+    $('shortcutGo').onclick = () => { sfx('click'); closeModal('shortcutModal'); shortcutAccept(); };
+    $('shortcutNo').onclick = () => { sfx('click'); closeModal('shortcutModal'); shortcutDecline(); };
+    openModal('shortcutModal');
 }
 
 // ---------- Туториал ----------

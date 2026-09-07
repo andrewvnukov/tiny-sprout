@@ -144,6 +144,14 @@ const EN = {
     'ничего не изменилось':'nothing changed',
     'и ':'and ',
 
+    // ---------- ярлык на главный экран ----------
+    'Ферма под рукой':'Your farm, one tap away',
+    'Добавь ярлык на главный экран — и возвращайся к ферме в одно касание.':
+        'Add a shortcut to your home screen and come back to the farm in one tap.',
+    'За установку — <b class="gold">+{n} {seed}</b>.':'You get <b class="gold">+{n} {seed}</b> for it.',
+    'Добавить':'Add',
+    'Ярлык добавлен! +{n} золотое семя':'Shortcut added! +{n} golden seed',
+
     // ---------- туториал ----------
     'Тапни по грядке,<br>чтобы посадить {icon}':'Tap a plot<br>to plant {icon}',
     'Подожди чуть-чуть…<br>и собери урожай!':'Wait a moment…<br>then harvest it!',

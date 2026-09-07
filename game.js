@@ -43,6 +43,7 @@ function freshState() {
         cnt: { harvests:0, sold:0, planted:0, orders:0, taps:0, aprods:0, goldens:0, prestiges:0,
                cropsAll:0, plotsAll:0, animAll:0 },
         boostUntil: 0, adGrowAt: 0,
+        scAsked: false, scDone: false,   // предлагали / добавили ярлык на экран
         sfxVol: .5, musVol: .5,     // громкость эффектов и музыки (0..1, 0.5 = базовая)
         time: Date.now(),
     };
@@ -500,10 +501,96 @@ function doPrestige() {
     toast(T('Новый сезон! +{p} золотых семян', { p }));
     fxPrestige();
     persist(true);
+    breakAd();          // конец сезона — естественная пауза для рекламы
     closeAllSheets();
     renderHud();
     checkAch();
 }
+
+// ---------- Ярлык на главный экран ----------
+// Самый прямой инструмент возвращаемости на площадке: игра появляется на
+// экране устройства. За установку разрешено давать награду — даём золотое семя.
+const SHORTCUT_REWARD = 1;
+// Предлагаем ярлык своей карточкой, а нативный showPrompt() зовём уже из
+// нажатия: без жеста пользователя браузер такой диалог может не открыть.
+function shortcutOffer() {
+    if (!ysdk || !ysdk.shortcut || !S || S.scDone || S.scAsked) return;
+    if (document.querySelector('.sheet.open, .modal.open')) return;   // не поверх другого окна
+    try {
+        Promise.resolve(ysdk.shortcut.canShowPrompt())
+            .then(r => { if (r && r.canShow) showShortcutModal(); })
+            .catch(() => {});
+    } catch(e) {}
+}
+function shortcutAccept() {
+    S.scAsked = true;                       // предлагаем один раз, без назойливости
+    persist(true);
+    try {
+        Promise.resolve(ysdk.shortcut.showPrompt())
+            .then(r => {
+                if (!r || r.outcome !== 'accepted') return;
+                S.scDone = true;
+                S.seeds += SHORTCUT_REWARD;
+                sfx('chest');
+                toast(T('Ярлык добавлен! +{n} золотое семя', { n: SHORTCUT_REWARD }));
+                persist(true);
+                renderHud();
+            })
+            .catch(() => {});
+    } catch(e) {}
+}
+function shortcutDecline() { S.scAsked = true; persist(true); }
+
+// ---------- Межстраничная реклама ----------
+// Частоту показа регулирует сама платформа: если позвать слишком часто, показа
+// не будет и onClose вернёт wasShown:false. Поверх этого держим свои правила,
+// чтобы реклама не приедалась и не ловила игрока посреди действия — площадка
+// прямо не советует показывать её во время активной игры (риск случайных кликов).
+const AD_IDLE_S   = 30;    // столько игрок должен ничего не делать
+const AD_GAP_S    = 210;   // минимум между показами
+const AD_WARMUP_S = 90;    // тишина в начале сессии, чтобы не встречать рекламой
+const AD_RETRY_S  = 45;    // платформа показ не отдала — вернёмся раньше
+let lastInputAt = 0, nextAdAt = 0, adBusy = false;
+
+function noteInput() { lastInputAt = Date.now(); }
+function adAvailable() {
+    return !!(ysdk && ysdk.adv && typeof ysdk.adv.showFullscreenAdv === 'function');
+}
+function showInterstitial() {
+    if (adBusy || !adAvailable()) return false;
+    adBusy = true;
+    const finish = wasShown => {
+        adBusy = false;
+        audioResume();
+        // паузу отсчитываем от факта показа: не показали — пробуем раньше
+        nextAdAt = Date.now() + (wasShown ? AD_GAP_S : AD_RETRY_S) * 1000;
+    };
+    try {
+        ysdk.adv.showFullscreenAdv({ callbacks: {
+            onOpen:  () => audioSuspend(),          // §4.7: на время ролика игра молчит
+            onClose: wasShown => finish(!!wasShown),
+            onError: () => finish(false),
+        }});
+    } catch(e) { finish(false); }
+    return true;
+}
+// Общие условия: игра запущена, вкладка на экране, пауза выдержана, поверх
+// ничего не открыто и не идёт оплаченный рекламой буст — его перебивать нечестно.
+function adAllowed() {
+    if (!booted || adBusy || document.hidden) return false;
+    if (Date.now() < nextAdAt) return false;
+    if (document.querySelector('.sheet.open, .modal.open')) return false;
+    if (boostOn()) return false;
+    return true;
+}
+// Простой: игрок ничего не нажимает — самый безопасный момент для показа.
+function idleAdTick() {
+    if (!adAllowed()) return;
+    if (Date.now() - lastInputAt < AD_IDLE_S * 1000) return;
+    showInterstitial();
+}
+// Естественная пауза (конец сезона, возвращение из офлайна) — простой не нужен.
+function breakAd() { if (adAllowed()) showInterstitial(); }
 
 // ---------- Реклама (rewarded) ----------
 function showRewarded(cb) {
@@ -516,7 +603,8 @@ function showRewarded(cb) {
                 // поэтому visibilitychange здесь не сработает и глушим вручную
                 onOpen:     () => audioSuspend(),
                 onRewarded: pay,
-                onClose:    () => audioResume(),
+                // после добровольного ролика межстраничную сразу не показываем
+                onClose:    () => { audioResume(); nextAdAt = Date.now() + AD_GAP_S * 1000; },
                 onError:    () => { audioResume(); pay(); },   // ошибка — награду всё равно даём
             }});
             return;
@@ -849,6 +937,12 @@ function boot(raw) {
     renderHud();
     renderTut();
     persist(true);
+    // реклама по простою: раз в секунду, вся логика окон и пауз внутри
+    lastInputAt = Date.now();
+    nextAdAt = Date.now() + AD_WARMUP_S * 1000;
+    setInterval(idleAdTick, 1000);
+    // ярлык предлагаем не сразу, а когда игрок уже втянулся
+    setTimeout(shortcutOffer, 150000);
     signalReady();                            // сначала сообщаем платформе…
     document.body.classList.add('ready');     // …и только потом открываем UI
 }
