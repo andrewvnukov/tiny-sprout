@@ -198,6 +198,30 @@ const dayBefore2 = () => new Date(Date.now() - 2 * 86400000).toISOString().slice
     await ctx.close();
 }
 
+// ---------- потолок офлайна досчитывается целиком ----------
+// Раньше предел шагов в fastForward был константой 2000 и втихую обрезал
+// начисление на 8 ч 20 мин: 9 и 12 часов давали одинаковый доход.
+{
+    const { ctx, page } = await launch();
+    const res = await page.evaluate(async () => {
+        const setup = () => {
+            S.coins = 1e15; buyZone(); buyZone();
+            for (let i = 0; i < MAXPLOTS + 4; i++) buyPlot();
+            for (let i = 0; i < CROPS.length; i++) S.crops[i] = true;
+            for (const w of ['harv', 'sow', 'seller']) for (let i = 0; i < 6; i++) buyWorker(w);
+            S.plots.forEach((p, i) => { p.c = i % CROPS.length; p.t = 0; });
+            S.coins = 0; S.store = {};
+        };
+        const run = sec => { setup(); const c0 = S.coins; fastForward(sec); return S.coins - c0; };
+        const h9 = run(9 * 3600);
+        const h12 = run(12 * 3600);
+        return { cap: OFFLINE_CAP / 3600, h9, h12, ratio: +(h12 / h9).toFixed(2) };
+    });
+    ok('потолок офлайна — 12 часов', res.cap === 12, res);
+    ok('12 часов приносят заметно больше 9 (нет обрезки)', res.ratio > 1.15, res);
+    await ctx.close();
+}
+
 // ---------- прогноз офлайна ----------
 {
     const { ctx, page } = await launch();

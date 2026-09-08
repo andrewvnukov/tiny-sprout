@@ -862,10 +862,16 @@ function pickAt(cx, cy) {
 let offlineT = 0;
 // прогоняем обычный sim крупными шагами: рост, сбор урожая работниками на склад
 // (с лимитом склада), производство животных. Доход/с (ips) офлайн не меняем.
+// Досчёт офлайна короткими шагами. Шаг увеличивать нельзя: за один шаг грядка
+// проходит максимум один цикл «посадка → рост → сбор», и на длинном шаге доход
+// молча просел бы. Предел шагов выводим из потолка, а не задаём числом, — раньше
+// он был константой 2000 и втихую обрезал начисление на 8 часах 20 минутах.
+const FF_STEP = 15;                                            // сек
+const FF_MAX_STEPS = Math.ceil(OFFLINE_CAP / FF_STEP) + 10;    // с запасом
 function fastForward(t) {
     const ips = S.ips, best = S.bestIps;
     let rem = t, g = 0;
-    while (rem > 0 && g++ < 2000) { simulate(Math.min(15, rem)); rem -= 15; }
+    while (rem > 0 && g++ < FF_MAX_STEPS) { simulate(Math.min(FF_STEP, rem)); rem -= FF_STEP; }
     S.ips = ips; S.bestIps = best;
 }
 function offlineCheck() {
