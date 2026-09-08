@@ -144,6 +144,22 @@ const EN = {
     'ничего не изменилось':'nothing changed',
     'и ':'and ',
 
+    // ---------- ежедневная серия ----------
+    'Ты вернулся!':'Welcome back!',
+    'Серия заходов: <b>{d}</b> подряд. Не пропусти завтра — награда растёт.':
+        'Streak: <b>{d}</b> days in a row. Come back tomorrow — the reward keeps growing.',
+    'Заходи каждый день — награда будет расти.':'Come back every day — the reward keeps growing.',
+    'День {d}: +{n} монет':'Day {d}: +{n} coins',
+    'День {d}: +{n} монет и +{s} {seed}':'Day {d}: +{n} coins and +{s} {seed}',
+
+    // ---------- офлайн-подсказка на складе ----------
+    'Пока тебя нет, продавец наторгует ≈{n} {coin} за {t}':
+        'While you are away the trader earns ≈{n} {coin} over {t}',
+    'Наймите продавца — и ферма будет приносить монеты, пока вас нет.':
+        'Hire a trader and the farm will earn coins while you are away.',
+    'Сменить за ролик':'Reroll for an ad',
+    'Сундук: +{n} монет и +{s} золотых семян!':'Chest: +{n} coins and +{s} golden seeds!',
+
     // ---------- ярлык на главный экран ----------
     'Ферма под рукой':'Your farm, one tap away',
     'Добавь ярлык на главный экран — и возвращайся к ферме в одно касание.':

@@ -357,6 +357,11 @@ function renderBarn() {
     const tot = storeTotal(), cap = whCap();
     $('barnCap').innerHTML = T('Склад: <b>{tot} / {cap}</b>', { tot, cap });
     $('barnBar').style.width = Math.min(100, tot/cap*100) + '%';
+    // причина вернуться: сколько накопится, пока игрока нет
+    const fc = offlineForecast();
+    $('barnOffline').innerHTML = fc > 0
+        ? T('Пока тебя нет, продавец наторгует ≈{n} {coin} за {t}', { n: fmt(fc), coin: icc('coin'), t: fmtTime(OFFLINE_CAP) })
+        : T('Наймите продавца — и ферма будет приносить монеты, пока вас нет.');
     const box = $('barnList');
     const ids = Object.keys(S.store);
     if (!ids.length) { box.innerHTML = `<div class="empty">${T('Пусто. Собери урожай с грядок!')}</div>`; return; }
@@ -398,7 +403,9 @@ function renderOrders() {
                 <div class="info"><b>${T(c.name)} x${o.qty}</b>
                 <small>${T('есть {have}/{qty} · награда {n} {coin}', { have, qty: o.qty, n: fmt(o.reward), coin: icc('coin') })}${o.seed ? ' + '+icc('seed') : ''}</small></div>
                 <button class="btn ${ok?'':'no'}" onclick="fulfillOrder(${k})">${T('сдать')}</button>
-                <button class="btn ghost ${left>0?'':'no'}" onclick="skipOrder(${k})" title="${T('Смен осталось: {left}', { left })}"><span class="ci">${ic('refresh')}</span></button>
+                ${left > 0
+                    ? `<button class="btn ghost" onclick="skipOrder(${k})" title="${T('Смен осталось: {left}', { left })}"><span class="ci">${ic('refresh')}</span></button>`
+                    : `<button class="btn ghost" onclick="adSkipOrder(${k})" title="${T('Сменить за ролик')}">${icc('ad')}</button>`}
             </div>`;
         });
         h += `<div style="text-align:center;color:var(--ink-soft);font-size:12px;padding:6px 0 2px">${T('Смена задания: осталось {left} из {max} за 2 часа', { left, max: SKIP_MAX })}</div>`;
@@ -420,7 +427,8 @@ function renderOrders() {
             <div class="ic">${ic(S.chestClaimed ? 'check' : 'chest')}</div>
             <div class="info"><b>${T('Сундук дня')}</b><small>${T('Выполни все 3 квеста · монеты + семя {seed}', { seed: icc('seed') })}</small></div>
             ${S.chestClaimed ? '<span class="tag">✓</span>'
-                             : `<button class="btn ${allDone?'':'no'}" onclick="claimChest()">${T('открыть сундук')}</button>`}
+                             : `<button class="btn ghost ${allDone?'':'no'}" onclick="adChest()">${icc('ad')} x2</button>
+                                <button class="btn ${allDone?'':'no'}" onclick="claimChest()">${T('открыть сундук')}</button>`}
         </div>`;
     }
     box.innerHTML = h;
@@ -544,11 +552,38 @@ function showOfflineModal(coins, store, t) {
         + (parts.join('<br>' + T('и ')) || T('ничего не изменилось')) + '!';
     $('offlineTake').textContent = T('Отлично');
     // возвращение из офлайна — тоже естественная пауза: игрок ещё ничего не начал
-    $('offlineTake').onclick = () => { closeModal('offlineModal'); setTimeout(breakAd, 400); };
+    // после офлайн-сводки сперва отдаём награду за серию, и только иначе — рекламу
+    $('offlineTake').onclick = () => {
+        closeModal('offlineModal');
+        setTimeout(() => { if (streakPending()) showStreakModal(); else breakAd(); }, 400);
+    };
     $('offlineX2').style.display = '';
     $('offlineX2').innerHTML = icc('ad') + T('Продолжить x2');
     $('offlineX2').onclick = () => showRewarded(() => { offlineBonus(); closeModal('offlineModal'); });
     openModal('offlineModal');
+}
+
+// ---------- Ежедневная серия заходов ----------
+function showStreakModal() {
+    if (!streakPending()) return;
+    const { streak, i } = streakNextIndex();
+    $('streakInfo').innerHTML = streak > 1
+        ? T('Серия заходов: <b>{d}</b> подряд. Не пропусти завтра — награда растёт.', { d: streak })
+        : T('Заходи каждый день — награда будет расти.');
+
+    // семь дней цикла: пройденные, сегодняшний и будущие
+    let h = '';
+    for (let d = 0; d < STREAK_DAYS; d++) {
+        const cls = d < i ? 'done' : d === i ? 'now' : '';
+        h += `<div class="streakDay ${cls}"><b>${d + 1}</b>${STREAK_SEEDS[d] ? icc('seed') : icc('coin')}</div>`;
+    }
+    $('streakRow').innerHTML = h;
+
+    $('streakGo').innerHTML = icc('coin') + ' ' + T('Забрать');
+    $('streakGo').onclick = () => { sfx('click'); closeModal('streakModal'); claimStreak(1); };
+    $('streakX2').innerHTML = icc('ad') + ' ' + T('Забрать x2');
+    $('streakX2').onclick = () => { sfx('click'); closeModal('streakModal'); showRewarded(() => claimStreak(2)); };
+    openModal('streakModal');
 }
 
 // ---------- Ярлык на главный экран ----------

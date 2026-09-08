@@ -44,6 +44,8 @@ function freshState() {
                cropsAll:0, plotsAll:0, animAll:0 },
         boostUntil: 0, adGrowAt: 0,
         scAsked: false, scDone: false,   // предлагали / добавили ярлык на экран
+        streak: 0, streakDay: '',        // серия заходов и дата последнего получения
+        reviewAsked: false,              // просили оценить игру
         sfxVol: .5, musVol: .5,     // громкость эффектов и музыки (0..1, 0.5 = базовая)
         time: Date.now(),
     };
@@ -407,6 +409,18 @@ function fulfillOrder(k) {
     persist(true);
     renderOrders(); renderHud();
 }
+// Лимит смен исчерпан — не отказываем, а предлагаем ролик: лишняя смена сверх
+// лимита и не тратит «ведро» появления заказов.
+function adSkipOrder(k) {
+    if (!S.orders[k]) return;
+    showRewarded(() => {
+        if (!S.orders[k]) return;
+        S.orders[k] = rollOrder();
+        sfx('click');
+        persist(true);
+        renderOrders();
+    });
+}
 function skipOrder(k) {
     if (!S.orders[k]) return;
     const now = Date.now();
@@ -446,16 +460,22 @@ function claimQuest(k) {
     persist(true);
     renderOrders(); renderHud();
 }
-function claimChest() {
+function claimChest(mult) {
     if (S.chestClaimed || !S.quests.every(q=>q.claimed)) return;
+    mult = mult || 1;
     S.chestClaimed = true;
     const r = chestReward();
-    earn(r.coins);
-    S.seeds += r.seed;
+    earn(r.coins * mult);
+    S.seeds += r.seed * mult;
     sfx('chest');
-    toast(T('Сундук: +{n} монет и +1 золотое семя!', { n: fmt(r.coins) }));
+    toast(T('Сундук: +{n} монет и +{s} золотых семян!', { n: fmt(r.coins * mult), s: r.seed * mult }));
     persist(true);
     renderOrders(); renderHud();
+}
+// добровольный ролик за удвоенный сундук
+function adChest() {
+    if (S.chestClaimed || !S.quests.every(q=>q.claimed)) return;
+    showRewarded(() => claimChest(2));
 }
 
 // ---------- Достижения ----------
@@ -501,10 +521,55 @@ function doPrestige() {
     toast(T('Новый сезон! +{p} золотых семян', { p }));
     fxPrestige();
     persist(true);
-    breakAd();          // конец сезона — естественная пауза для рекламы
+    // конец сезона — яркий момент: сперва пробуем позвать на оценку,
+    // и только если она недоступна, показываем обычную рекламную паузу
+    maybeAskReview(breakAd);
     closeAllSheets();
     renderHud();
     checkAch();
+}
+
+// ---------- Ежедневная серия заходов ----------
+const dayBefore = () => new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+const streakPending = () => !!S && S.streakDay !== todayStr();
+// день цикла, который игрок получит, если заберёт награду прямо сейчас
+function streakNextIndex() {
+    const next = (S.streakDay === dayBefore()) ? S.streak + 1 : 1;
+    return { streak: next, i: (next - 1) % STREAK_DAYS };
+}
+function claimStreak(mult) {
+    if (!streakPending()) return;
+    const { streak, i } = streakNextIndex();
+    S.streak = streak;
+    S.streakDay = todayStr();
+    const coins = streakCoins(i) * mult;
+    const seeds = STREAK_SEEDS[i] * mult;
+    earn(coins);
+    S.seeds += seeds;
+    sfx('chest');
+    toast(seeds
+        ? T('День {d}: +{n} монет и +{s} {seed}', { d: S.streak, n: fmt(coins), s: seeds, seed: icc('seed') })
+        : T('День {d}: +{n} монет', { d: S.streak, n: fmt(coins) }));
+    persist(true);
+    renderHud();
+}
+
+// ---------- Оценка игры ----------
+// canReview() обязателен перед requestReview(), а сам запрос разрешён один раз
+// за сессию — поэтому зовём только после яркого момента (первый новый сезон).
+function maybeAskReview(fallback) {
+    const skip = () => { if (fallback) fallback(); };
+    if (!ysdk || !ysdk.feedback || !S || S.reviewAsked || S.cnt.prestiges < 1) { skip(); return; }
+    try {
+        Promise.resolve(ysdk.feedback.canReview())
+            .then(r => {
+                if (!r || !r.value) { skip(); return; }   // NO_AUTH, GAME_RATED и т.п.
+                S.reviewAsked = true;
+                persist(true);
+                return ysdk.feedback.requestReview();
+            })
+            .catch(skip);
+    } catch(e) { skip(); }
 }
 
 // ---------- Ярлык на главный экран ----------
@@ -851,6 +916,14 @@ function offlineCheck() {
     const store = storeTotal() - st0;            // работники собрали на склад
     if (coins > 0 || store > 0) showOfflineModal(coins, store, offlineT);
 }
+// Прогноз офлайн-дохода для подсказки на складе — причина вернуться завтра.
+// Точную цифру дала бы только симуляция, но она мутирует состояние и попутно
+// дёргает звуки и достижения, поэтому это приближение по текущему темпу — «≈».
+// Без продавца офлайн никто не торгует, значит и монет не будет.
+function offlineForecast() {
+    if (!S || !S.workers.seller) return 0;
+    return Math.round(S.ips * OFFLINE_CAP);
+}
 // «продолжить» (реклама): ещё столько же времени работы
 function offlineBonus() {
     const c0 = Math.floor(S.coins), st0 = storeTotal();
@@ -937,6 +1010,10 @@ function boot(raw) {
     renderHud();
     renderTut();
     persist(true);
+    // Награда за серию — только тем, кто уже освоился: новичка на первом запуске
+    // встречать окном «ты вернулся» бессмысленно, его серия начнётся со второго
+    // захода. Если открыта офлайн-сводка, окно покажется после неё.
+    if (S.tut >= 3 && streakPending() && !document.querySelector('.modal.open')) showStreakModal();
     // реклама по простою: раз в секунду, вся логика окон и пауз внутри
     lastInputAt = Date.now();
     nextAdAt = Date.now() + AD_WARMUP_S * 1000;

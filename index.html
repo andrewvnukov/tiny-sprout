@@ -149,6 +149,8 @@ button { font-family:inherit; color:var(--ink); }
     box-shadow:inset 0 1px 3px rgba(96,74,52,.15); }
 .capwrap i { display:block; height:100%; background:#eeb45f; border-radius:8px; }
 #barnCap { font-size:13px; margin-bottom:4px; }
+#barnOffline { margin-top:7px; font-size:12px; line-height:1.35; color:var(--ink-soft); text-align:center; }
+#barnOffline .ci { width:12px; height:12px; vertical-align:-1px; }
 
 .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
 .cell { background:var(--card); border-radius:15px; text-align:center;
@@ -210,6 +212,17 @@ button { font-family:inherit; color:var(--ink); }
     border-radius:50%; background:var(--green); border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
 .sndRow input[type=range]::-moz-range-thumb { width:24px; height:24px; border-radius:50%; background:var(--green);
     border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
+
+/* ---------- ежедневная серия ---------- */
+.streakRow { display:flex; gap:5px; justify-content:center; margin:14px 0 16px; }
+.streakDay { flex:1; max-width:44px; border-radius:12px; background:var(--cream); padding:7px 2px 6px;
+    font-size:11px; font-weight:800; color:var(--ink-soft); }
+.streakDay b { display:block; font-size:12.5px; color:var(--ink); }
+.streakDay .ci { width:13px; height:13px; }
+.streakDay.done { background:#eef4dd; color:#7d9a5c; }
+/* сегодняшний день — зелёным: на золотом фоне золотое семя не читалось */
+.streakDay.now  { background:var(--green); color:#fff; box-shadow:0 2px 0 var(--green-edge); }
+.streakDay.now b { color:#fff; }
 
 /* ---------- выбор языка ---------- */
 .langSel { flex:1; display:flex; gap:6px; }
@@ -284,6 +297,7 @@ button { font-family:inherit; color:var(--ink); }
     <div class="capbar">
         <div id="barnCap" data-t="Склад: 0 / 60">Склад: 0 / 60</div>
         <div class="capwrap"><i id="barnBar" style="width:0%"></i></div>
+        <div id="barnOffline"></div>
     </div>
     <div class="list" id="barnList"></div>
     <div style="padding:0 16px 16px"><button class="bbtn" id="sellAllBtn" style="width:100%; justify-content:center"><span class="ci" data-ico="sell"></span><span data-t="Продать всё">Продать всё</span></button></div>
@@ -339,6 +353,16 @@ button { font-family:inherit; color:var(--ink); }
         <p id="offlineInfo"></p>
         <button class="bbtn" id="offlineX2" data-t="Забрать x2"><span class="ci" data-ico="ad"></span>Забрать x2</button>
         <button class="bbtn" id="offlineTake" data-t="Забрать">Забрать</button>
+    </div>
+</div>
+
+<div class="modal ui" id="streakModal">
+    <div class="mbox">
+        <h2><span class="fico" data-ico="chest"></span><span data-t="Ты вернулся!">Ты вернулся!</span></h2>
+        <p id="streakInfo"></p>
+        <div class="streakRow" id="streakRow"></div>
+        <button class="bbtn" id="streakX2"></button>
+        <button class="bbtn" id="streakGo"></button>
     </div>
 </div>
 
