@@ -51,6 +51,9 @@ function freshState() {
     };
 }
 
+// допустимые имена счётчиков — по ним проверяем квесты из чужого сейва
+const S_CNT_KEYS = freshState().cnt;
+
 const boostOn = () => S.boostUntil > Date.now();
 const storeTotal = () => Object.values(S.store).reduce((a,b)=>a+b, 0);
 const todayStr = () => new Date().toISOString().slice(0,10);
@@ -63,6 +66,11 @@ const SAVE_KEY = 'tinysprout';
 // при уходе со страницы дожимаем немедленно, см. flushSave().
 function persist(force, flush) {
     if (!booted) return;
+    // Досчёт офлайна прогоняет тысячи шагов симуляции, и каждый сбор урожая
+    // звал бы сохранение: за одно возвращение это ~2900 записей в облако при
+    // лимите платформы 100 запросов за 5 минут. Копим молча, а состояние
+    // сохраняем один раз после досчёта.
+    if (ffBusy) return;
     if (!force && saveT > 0) return;
     saveT = 10;
     S.time = Date.now();
@@ -82,31 +90,90 @@ function flushSave() {
     _flushedAt = Date.now();
     persist(true, true);
 }
+// Числовое поле сейва: всё, что не конечное число, заменяем значением по
+// умолчанию. Сейв приходит из облака и с чужого устройства, доверять нечему.
+const sNum = (v, def, min, max) => {
+    const n = typeof v === 'number' && isFinite(v) ? v : def;
+    return Math.max(min === undefined ? -Infinity : min,
+                    Math.min(max === undefined ? Infinity : max, n));
+};
+const sArr = (v, def) => Array.isArray(v) ? v : def;
 function restore(raw) {
+    if (!raw) return freshState();
+    // Слияние идёт в отдельный объект: при поломке возвращаем чистое
+    // состояние, а не то, что успели испортить. Иначе один битый сейв
+    // навсегда заклинивал запуск — и переиграть его игрок уже не мог.
     const f = freshState();
-    if (!raw) return f;
     try {
         const d = JSON.parse(raw);
+        if (!d || typeof d !== 'object') return f;
         // осторожное слияние: недостающие поля берём из свежего состояния
         for (const k in f)
             if (d[k] !== undefined) f[k] = d[k];
-        for (const k in f.up)      if (typeof f.up[k] !== 'number') f.up[k] = 0;
-        for (const k in f.workers) if (typeof f.workers[k] !== 'number') f.workers[k] = 0;
+        for (const k in freshState().up)      f.up[k]      = sNum(f.up      && f.up[k], 0, 0);
+        for (const k in freshState().workers) f.workers[k] = sNum(f.workers && f.workers[k], 0, 0);
         // миграция: трактор заменён продавцом — переносим уровни
-        if (typeof f.workers.seller !== 'number') f.workers.seller = (typeof f.workers.tract === 'number' ? f.workers.tract : 0);
+        if (d.workers && typeof d.workers.tract === 'number' && !f.workers.seller)
+            f.workers.seller = d.workers.tract;
         delete f.workers.tract;
-        for (const k in f.animals) if (typeof f.animals[k] !== 'number') f.animals[k] = 0;
+        for (const k in freshState().animals) {
+            const a = ANIMALS.find(x => x.id === k);
+            f.animals[k] = sNum(f.animals && f.animals[k], 0, 0, a ? a.max : 0);
+            f.animT[k]   = sNum(f.animT   && f.animT[k],   0, 0);
+        }
         if (!f.tips || typeof f.tips !== 'object') f.tips = {};
-        const c = freshState().cnt;
-        f.cnt = Object.assign(c, f.cnt);
+        if (!f.ach  || typeof f.ach  !== 'object') f.ach  = {};
+        f.cnt = Object.assign(freshState().cnt, f.cnt);
+        for (const k in f.cnt) f.cnt[k] = sNum(f.cnt[k], 0, 0);
+        f.coins = sNum(f.coins, 0, 0);
+        f.seeds = sNum(f.seeds, 0, 0);
+        f.lifeEarned = sNum(f.lifeEarned, 0, 0);
+        f.seasonEarned = sNum(f.seasonEarned, 0, 0);
+        f.ips = sNum(f.ips, 0, 0);
+        f.bestIps = sNum(f.bestIps, 0, 0);
+        f.tut = sNum(f.tut, 0, 0, 3);
+        f.zones = sNum(f.zones, 1, 1, ZONES.length);
+        f.time = sNum(f.time, Date.now());
         // миграция на суммарную модель престижа: у старых сейвов нет claimedSeeds —
         // выставляем «уже выдано» по текущему lifeEarned, чтобы не подарить пачку семян
-        if (typeof d.claimedSeeds !== 'number') f.claimedSeeds = seedsFromEarned(f.lifeEarned);
+        f.claimedSeeds = typeof d.claimedSeeds === 'number'
+            ? sNum(d.claimedSeeds, 0, 0) : seedsFromEarned(f.lifeEarned);
+        // Индексы культур: сейв мог прийти из версии, где культур больше.
+        // Без проверки CROPS[i] был бы undefined и игра падала бы при запуске.
+        f.crops = sArr(f.crops, []).slice(0, CROPS.length).map(x => !!x);
+        f.disc  = sArr(f.disc,  []).slice(0, CROPS.length).map(x => !!x);
         while (f.crops.length < CROPS.length) f.crops.push(false);
-        while (f.disc.length < CROPS.length) f.disc.push(false);
+        while (f.disc.length  < CROPS.length) f.disc.push(false);
+        f.crops[0] = f.disc[0] = true;               // стартовая культура всегда открыта
+        // Индекс вне таблицы не подрезаем к последней культуре: это подарило бы
+        // игроку самый дорогой ананас. Считаем такую грядку пустой.
+        const cropAt = v => {
+            const i = Math.round(sNum(v, -1));
+            return CROPS[i] ? i : -1;
+        };
+        f.lastCrop = f.crops[cropAt(f.lastCrop)] ? cropAt(f.lastCrop) : 0;
+        f.plots = sArr(f.plots, []).slice(0, MAXPLOTS).map(p => {
+            const empty = { c:-1, t:0, g:false };
+            if (!p || typeof p !== 'object') return empty;
+            const c = cropAt(p.c);
+            return c < 0 ? empty : { c, t: sNum(p.t, 0, 0), g: !!p.g };
+        });
         if (!f.plots.length) f.plots = [{ c:-1, t:0, g:false }];
+        // на складе могли остаться товары, которых в игре больше нет
+        const known = {};
+        for (const c of CROPS) known[c.id] = 1;
+        for (const a of APRODS) known[a.id] = 1;
+        const st = {};
+        if (f.store && typeof f.store === 'object')
+            for (const id in f.store) { const n = sNum(f.store[id], 0, 0) | 0; if (known[id] && n > 0) st[id] = n; }
+        f.store = st;
+        // заказы и квесты: чужие индексы и счётчики просто выбрасываем
+        f.orders = sArr(f.orders, []).slice(0, ORDER_SLOTS)
+            .map(o => (o && CROPS[o.crop] && o.qty > 0) ? o : null);
+        f.quests = sArr(f.quests, []).filter(q => q && (q.cnt in S_CNT_KEYS) && typeof q.n === 'number');
+        if (f.quests.length !== 3) { f.quests = []; f.qday = ''; }
         return f;
-    } catch(e) { return f; }
+    } catch(e) { return freshState(); }
 }
 
 // ---------- Лидерборд (Яндекс Игры): сумма золотых семян ----------
@@ -254,7 +321,9 @@ function harvestPlot(i, silent) {
     S.cnt.harvests++;
     if (p.g) { S.cnt.goldens++; if (!silent) sfx('golden'); }
     else if (!silent) sfx('harvest');
-    fxHarvest(i, p.c, p.g);
+    // Частицы живут до отрисовки и никем не ограничены: за 12 часов офлайна
+    // сюда прилетало 180 тысяч штук, и все они высыпались в первый же кадр.
+    if (!ffBusy) fxHarvest(i, p.c, p.g);
     S.plots[i] = { c:-1, t:0, g:false };
     if (S.tut === 1) { S.tut = 2; renderTut(); }
     persist();
@@ -438,18 +507,6 @@ function fulfillOrder(k) {
     persist(true);
     renderOrders(); renderHud();
 }
-// Лимит смен исчерпан — не отказываем, а предлагаем ролик: лишняя смена сверх
-// лимита и не тратит «ведро» появления заказов.
-function adSkipOrder(k) {
-    if (!S.orders[k]) return;
-    showRewarded(() => {
-        if (!S.orders[k]) return;
-        S.orders[k] = rollOrder();
-        sfx('click');
-        persist(true);
-        renderOrders();
-    });
-}
 
 // ---------- Квесты дня ----------
 function questTier() { return S.bestIps < 50 ? 0 : S.bestIps < 1000 ? 1 : 2; }
@@ -467,7 +524,21 @@ function ensureQuests() {
     }
     persist(true);
 }
-function qProg(q) { return Math.min(q.n, S.cnt[q.cnt] - q.start); }
+function qProg(q) { return Math.max(0, Math.min(q.n, S.cnt[q.cnt] - q.start)); }
+// Офлайн-работа не засчитывается в квесты дня. Иначе за ночь работники
+// выполняли их сами: игрок заходил на готовые галочки, и ежедневный цикл
+// (а вместе с ним и повод открыть сундук) терял смысл. cnt0 — счётчики до
+// досчёта; сдвигаем базу так, чтобы прогресс, набранный вживую, сохранился,
+// а офлайн-прирост в зачёт не пошёл.
+function rebaseQuests(cnt0) {
+    for (const q of S.quests) {
+        if (q.claimed) continue;
+        // квест мог родиться уже во время досчёта (смена суток) — тогда
+        // разность отрицательная и живого прогресса просто нет
+        const live = Math.max(0, (cnt0[q.cnt] || 0) - q.start);
+        q.start = S.cnt[q.cnt] - live;
+    }
+}
 function claimQuest(k) {
     const q = S.quests[k];
     if (q.claimed || qProg(q) < q.n) return;
@@ -503,6 +574,9 @@ function checkAch() {
         if (S.cnt[a.cnt] >= a.n) {
             S.ach[a.id] = true;
             S.seeds += a.seed;
+            // За офлайн может закрыться сразу несколько достижений: семена
+            // начисляем, но не устраиваем очередь из тостов поверх сводки
+            if (ffBusy) continue;
             sfx('chest');
             toast(T('Достижение «{name}»: +{n} зол. сем.', { name: T(a.name), n: a.seed }));
             persist(true);
@@ -651,8 +725,10 @@ function adBoost() {
         renderHud();
     });
 }
+// есть ли что дорастить: посаженная и ещё не созревшая грядка
+const growable = () => !!S && S.plots.some(p => p.c >= 0 && p.t < cropGrow(CROPS[p.c]));
 function adGrowAll() {
-    if (Date.now() < S.adGrowAt) return;
+    if (Date.now() < S.adGrowAt || !growable()) return;
     showRewarded(() => {
         for (const p of S.plots)
             if (p.c >= 0) p.t = cropGrow(CROPS[p.c]);
@@ -870,10 +946,17 @@ let offlineT = 0;
 // он был константой 2000 и втихую обрезал начисление на 8 часах 20 минутах.
 const FF_STEP = 15;                                            // сек
 const FF_MAX_STEPS = Math.ceil(OFFLINE_CAP / FF_STEP) + 10;    // с запасом
+// Пока идёт досчёт, симуляция должна быть немой: сохранения, частицы, звуки и
+// всплывающие подписи рассчитаны на один кадр реального времени, а здесь их
+// набегают десятки тысяч. См. persist(), harvestPlot() и checkAch().
+let ffBusy = false;
 function fastForward(t) {
     const ips = S.ips, best = S.bestIps;
     let rem = t, g = 0;
-    while (rem > 0 && g++ < FF_MAX_STEPS) { simulate(Math.min(FF_STEP, rem)); rem -= FF_STEP; }
+    ffBusy = true;
+    try {
+        while (rem > 0 && g++ < FF_MAX_STEPS) { simulate(Math.min(FF_STEP, rem)); rem -= FF_STEP; }
+    } finally { ffBusy = false; }
     S.ips = ips; S.bestIps = best;
 }
 function offlineCheck() {
@@ -882,7 +965,9 @@ function offlineCheck() {
     offlineT = Math.min(dt, OFFLINE_CAP);
     const c0 = Math.floor(S.coins);
     const before = Object.assign({}, S.store);
+    const cnt0 = Object.assign({}, S.cnt);
     fastForward(offlineT);
+    rebaseQuests(cnt0);
     const coins = Math.floor(S.coins) - c0;      // продавец наторговал
     // что именно прибавилось на складе: показываем чистый прирост по товарам,
     // проданное продавцом уже отражено в монетах
@@ -912,7 +997,9 @@ function offlineForecast() {
 // «продолжить» (реклама): ещё столько же времени работы
 function offlineBonus() {
     const c0 = Math.floor(S.coins), st0 = storeTotal();
+    const cnt0 = Object.assign({}, S.cnt);
     fastForward(offlineT);
+    rebaseQuests(cnt0);          // продление — та же офлайн-работа, в квесты не идёт
     const coins = Math.floor(S.coins) - c0, store = storeTotal() - st0;
     sfx(coins > 0 || store > 0 ? 'coin' : 'error');
     toast(coins > 0 ? T('+{n} монет', { n: fmt(coins) })

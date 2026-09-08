@@ -214,17 +214,21 @@ function renderHud() {
     const c = CROPS[S.lastCrop];
     $('cropBtn').innerHTML = icc(c.id) + ' <b>' + T(c.name) + '</b> ▾';
 
-    // буст
+    // буст: пока он идёт, кнопка показывает остаток и не жмётся — иначе
+    // повторный тап просто ничего не делал бы
     if (boostOn()) {
         $('boostBtn').classList.add('on');
+        $('boostBtn').disabled = true;
         $('boostBtn').innerHTML = icc('boost') + ' x2 · ' + Math.ceil((S.boostUntil-Date.now())/1000) + T('@ssec');
     } else {
         $('boostBtn').classList.remove('on');
+        $('boostBtn').disabled = false;
         $('boostBtn').innerHTML = icc('ad') + ' ' + T('Доход x2');
     }
-    // дорастить
+    // дорастить: кроме кулдауна запираем кнопку, когда дорастить нечего —
+    // ролик за пустой результат игрок воспринимает как обман
     const cd = Math.ceil((S.adGrowAt - Date.now())/1000);
-    $('growBtn').disabled = cd > 0;
+    $('growBtn').disabled = cd > 0 || !growable();
     $('growBtn').innerHTML = cd > 0 ? icc('grow') + ' ' + cd + T('@ssec') : icc('ad') + ' ' + T('Дорастить всё');
 
     // бейджи
@@ -619,8 +623,10 @@ const TIPS = [
         target: 'boostBtn',
         text: () => T('Хочешь монет вдвое больше?<br>Посмотри короткий ролик {icon}',
                       { icon: '<i class="ci">' + ICONS.ad + '</i>' }),
-        // после первой продажи: игрок уже понял, зачем ему монеты
-        when: () => S.tut >= 3 && S.cnt.sold > 0,
+        // после первой продажи: игрок уже понял, зачем ему монеты.
+        // При включённом бусте кнопка показывает таймер, и подсказка «посмотри
+        // ролик» указывала бы на кнопку, которая сейчас ничего не сделает
+        when: () => S.tut >= 3 && S.cnt.sold > 0 && !boostOn(),
     },
     {
         id: 'work',
