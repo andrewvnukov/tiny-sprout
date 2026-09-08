@@ -105,9 +105,6 @@ const EN = {
     'Новый заказ скоро…':'New order soon…',
     'появляются до {n} в час':'up to {n} appear per hour',
     'есть {have}/{qty} · награда {n} {coin}':'have {have}/{qty} · reward {n} {coin}',
-    'Смена задания: осталось {left} из {max} за 2 часа':
-        'Order rerolls: {left} of {max} left per 2 hours',
-    'Смен осталось: {left}':'Rerolls left: {left}',
     'Сундук дня':'Daily chest',
     'Выполни все 3 квеста · монеты + семя {seed}':'Complete all 3 quests · coins + a seed {seed}',
 
@@ -139,14 +136,14 @@ const EN = {
 
     // ---------- офлайн ----------
     'продавец наторговал <b>{n} {coin}</b>':'the trader earned <b>{n} {coin}</b>',
-    'работники собрали <b>{n} {barn}</b> на склад':'the workers stocked <b>{n} {barn}</b> in the barn',
-    'Пока тебя не было ({t}),<br>':'While you were away ({t}),<br>',
     'ничего не изменилось':'nothing changed',
     'и ':'and ',
 
     // ---------- офлайн-сводка ----------
     'Тебя не было {t}. Ферма работала:':'You were away for {t}. The farm kept working:',
     'Продавец наторговал':'Trader earned',
+    'Склад заполнился — работники простаивали. Расширь погреб, чтобы за ночь копилось больше.':
+        'The barn filled up and the workers idled. Expand the cellar to store more overnight.',
     'Другие квесты закончились':'No other quests left',
     'Пока тебя нет, ферма наработает ≈{n} {coin} за {t}':
         'While you are away the farm earns ≈{n} {coin} over {t}',

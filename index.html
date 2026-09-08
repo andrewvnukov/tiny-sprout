@@ -170,7 +170,9 @@ button { font-family:inherit; color:var(--ink); }
     background:rgba(64,50,36,.5); opacity:0; pointer-events:none; transition:opacity .2s; z-index:40; }
 .modal.open { opacity:1; pointer-events:auto; }
 .mbox { background:var(--paper); border-radius:26px; padding:24px;
-    width:min(360px, 92vw); text-align:center; box-shadow:0 12px 40px rgba(50,38,26,.35); }
+    width:min(360px, 92vw); text-align:center; box-shadow:0 12px 40px rgba(50,38,26,.35);
+    /* страховка: содержимое модалок переменной длины не должно уезжать за экран */
+    max-height:88vh; overflow-y:auto; }
 .mbox h2 { display:flex; align-items:center; justify-content:center; gap:9px; margin-bottom:12px;
     font-family:'Neucha', 'Nunito', sans-serif; font-weight:400; font-size:26px; }
 .mbox h2 .fico { width:26px; height:26px; }
@@ -214,7 +216,12 @@ button { font-family:inherit; color:var(--ink); }
     border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
 
 /* ---------- офлайн-сводка ---------- */
-#offlineList { margin:12px 0 14px; }
+/* в сводке список бывает длинным (все культуры + продукты): прокручиваем
+   только его, а заголовок и кнопки держим на виду */
+#offlineModal .mbox { display:flex; flex-direction:column; overflow:hidden; }
+#offlineList { margin:12px 0 14px; overflow-y:auto; min-height:0; }
+.offWarn { margin-top:8px; padding:9px 12px; border-radius:14px; background:#fdf3d7;
+    color:#8a6a3a; font-size:12px; line-height:1.35; }
 .offRow { display:flex; align-items:center; gap:9px; background:var(--card); border-radius:14px;
     padding:7px 11px; margin-bottom:6px; box-shadow:0 1px 4px rgba(96,74,52,.1); }
 .offRow .ic { width:26px; height:26px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }

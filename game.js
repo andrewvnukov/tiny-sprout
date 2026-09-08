@@ -890,9 +890,12 @@ function offlineCheck() {
         const d = S.store[id] - (before[id] || 0);
         if (d > 0) { gained[id] = d; store += d; }
     }
+    // Склад мог заполниться задолго до конца отлучки — тогда работники всё
+    // оставшееся время простаивали, и игрок недополучил. Честно скажем об этом.
+    const barnFull = storeTotal() >= whCap();
     // Короткие отлучки не отчитываем: сводка ради пары минут только мешает.
     if (dt < OFFLINE_REPORT) return;
-    if (coins > 0 || store > 0) showOfflineModal(coins, gained, store, offlineT);
+    if (coins > 0 || store > 0) showOfflineModal(coins, gained, store, offlineT, barnFull);
 }
 // Прогноз офлайн-дохода для подсказки на складе — причина вернуться завтра.
 // Точную цифру дала бы только симуляция, но она мутирует состояние и попутно

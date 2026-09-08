@@ -542,7 +542,7 @@ function showPrestige() {
 
 // ---------- Офлайн-модалка ----------
 // gained — сколько чего прибавилось на складе, coins — что наторговал продавец
-function showOfflineModal(coins, gained, store, t) {
+function showOfflineModal(coins, gained, store, t, barnFull) {
     $('offlineInfo').innerHTML = T('Тебя не было {t}. Ферма работала:', { t: fmtTime(t) });
 
     // построчно, что именно принесли работники — так видно отдачу от найма
@@ -557,6 +557,8 @@ function showOfflineModal(coins, gained, store, t) {
         h += `<div class="offRow"><span class="ic">${ic('coin')}</span>
             <b>${T('Продавец наторговал')}</b><em>+${fmt(coins)}</em></div>`;
     if (!h) h = `<div class="hint">${T('ничего не изменилось')}</div>`;
+    // объясняем недобор: иначе «был 12 часов, а принесли как за два» выглядит поломкой
+    if (barnFull) h += `<div class="offWarn">${T('Склад заполнился — работники простаивали. Расширь погреб, чтобы за ночь копилось больше.')}</div>`;
     $('offlineList').innerHTML = h;
 
     $('offlineTake').textContent = T('Отлично');

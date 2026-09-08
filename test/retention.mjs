@@ -222,6 +222,39 @@ const dayBefore2 = () => new Date(Date.now() - 2 * 86400000).toISOString().slice
     await ctx.close();
 }
 
+// ---------- длинная сводка не вылезает за экран ----------
+// Список позиций переменной длины: со всеми культурами и продуктами окно
+// перерастало экран, и кнопки уходили за его пределы.
+{
+    const ctx = await browser.newContext({ viewport: { width: 320, height: 568 } });
+    const page = await ctx.newPage();
+    await page.route('https://yandex.ru/**', r => r.abort());
+    await page.addInitScript(MOCK, {});
+    await page.goto(BASE);
+    await page.waitForFunction(() => window.render_game_to_text && (() => {
+        try { return !!JSON.parse(window.render_game_to_text()).plots; } catch (e) { return false; }
+    })(), null, { timeout: 25000 });
+    await page.waitForTimeout(500);
+    const res = await page.evaluate(() => {
+        const g = {}; CROPS.forEach(c => g[c.id] = 12); APRODS.forEach(a => g[a.id] = 5);
+        showOfflineModal(999999, g, 200, 12 * 3600, true);
+        const box = document.querySelector('#offlineModal .mbox').getBoundingClientRect();
+        const btn = document.getElementById('offlineTake').getBoundingClientRect();
+        const h2 = document.querySelector('#offlineModal h2').getBoundingClientRect();
+        return {
+            rows: document.querySelectorAll('#offlineList .offRow').length,
+            fits: box.top >= -1 && box.bottom <= innerHeight + 1,
+            btn: btn.bottom <= innerHeight + 1 && btn.top >= -1,
+            title: h2.top >= -1,
+            warn: !!document.querySelector('.offWarn'),
+        };
+    });
+    ok('длинная сводка помещается на узком экране', res.fits, res);
+    ok('кнопки и заголовок остаются доступны', res.btn && res.title, res);
+    ok('о заполненном складе предупреждаем', res.warn, res);
+    await ctx.close();
+}
+
 // ---------- прогноз офлайна ----------
 {
     const { ctx, page } = await launch();
