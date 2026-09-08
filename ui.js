@@ -360,8 +360,8 @@ function renderBarn() {
     // причина вернуться: сколько накопится, пока игрока нет
     const fc = offlineForecast();
     $('barnOffline').innerHTML = fc > 0
-        ? T('Пока тебя нет, продавец наторгует ≈{n} {coin} за {t}', { n: fmt(fc), coin: icc('coin'), t: fmtTime(OFFLINE_CAP) })
-        : T('Наймите продавца — и ферма будет приносить монеты, пока вас нет.');
+        ? T('Пока тебя нет, ферма наработает ≈{n} {coin} за {t}', { n: fmt(fc), coin: icc('coin'), t: fmtTime(OFFLINE_CAP) })
+        : '';
     const box = $('barnList');
     const ids = Object.keys(S.store);
     if (!ids.length) { box.innerHTML = `<div class="empty">${T('Пусто. Собери урожай с грядок!')}</div>`; return; }
@@ -385,7 +385,6 @@ function renderOrders() {
     const box = $('orderList');
     let h = '';
     if (orderTab === 'orders') {
-        const left = skipsLeft();
         S.orders.forEach((o, k) => {
             if (!o) {   // слот ждёт нового заказа (ограничение появления)
                 h += `<div class="row" style="opacity:.6">
@@ -403,12 +402,9 @@ function renderOrders() {
                 <div class="info"><b>${T(c.name)} x${o.qty}</b>
                 <small>${T('есть {have}/{qty} · награда {n} {coin}', { have, qty: o.qty, n: fmt(o.reward), coin: icc('coin') })}${o.seed ? ' + '+icc('seed') : ''}</small></div>
                 <button class="btn ${ok?'':'no'}" onclick="fulfillOrder(${k})">${T('сдать')}</button>
-                ${left > 0
-                    ? `<button class="btn ghost" onclick="skipOrder(${k})" title="${T('Смен осталось: {left}', { left })}"><span class="ci">${ic('refresh')}</span></button>`
-                    : `<button class="btn ghost" onclick="adSkipOrder(${k})" title="${T('Сменить за ролик')}">${icc('ad')}</button>`}
+                <button class="btn ghost" onclick="adSkipOrder(${k})" title="${T('Сменить за ролик')}">${icc('ad')}</button>
             </div>`;
         });
-        h += `<div style="text-align:center;color:var(--ink-soft);font-size:12px;padding:6px 0 2px">${T('Смена задания: осталось {left} из {max} за 2 часа', { left, max: SKIP_MAX })}</div>`;
     } else {
         S.quests.forEach((q, k) => {
             const p = qProg(q);
@@ -419,7 +415,8 @@ function renderOrders() {
                 <small>${Math.min(p,q.n)}/${q.n} · ${fmt(q.reward)} ${icc('coin')}</small>
                 <div class="qbar"><i style="width:${Math.min(100,p/q.n*100)}%"></i></div></div>
                 ${q.claimed ? '<span class="tag">✓</span>'
-                            : `<button class="btn ${done?'':'no'}" onclick="claimQuest(${k})">${T('забрать')}</button>`}
+                            : `<button class="btn ghost" onclick="adRerollQuest(${k})" title="${T('Сменить за ролик')}">${icc('ad')}</button>
+                               <button class="btn ${done?'':'no'}" onclick="claimQuest(${k})">${T('забрать')}</button>`}
             </div>`;
         });
         const allDone = S.quests.every(q=>q.claimed);
@@ -544,18 +541,29 @@ function showPrestige() {
 }
 
 // ---------- Офлайн-модалка ----------
-function showOfflineModal(coins, store, t) {
-    const parts = [];
-    if (coins > 0) parts.push(T('продавец наторговал <b>{n} {coin}</b>', { n: fmt(coins), coin: icc('coin') }));
-    if (store > 0) parts.push(T('работники собрали <b>{n} {barn}</b> на склад', { n: store, barn: icc('barn') }));
-    $('offlineInfo').innerHTML = T('Пока тебя не было ({t}),<br>', { t: fmtTime(t) })
-        + (parts.join('<br>' + T('и ')) || T('ничего не изменилось')) + '!';
+// gained — сколько чего прибавилось на складе, coins — что наторговал продавец
+function showOfflineModal(coins, gained, store, t) {
+    $('offlineInfo').innerHTML = T('Тебя не было {t}. Ферма работала:', { t: fmtTime(t) });
+
+    // построчно, что именно принесли работники — так видно отдачу от найма
+    let h = '';
+    for (const id in gained) {
+        const c = CROPS.find(x => x.id === id) || APRODS.find(x => x.id === id);
+        if (!c) continue;
+        h += `<div class="offRow"><span class="ic">${ic(id)}</span>
+            <b>${T(c.name)}</b><em>+${gained[id]}</em></div>`;
+    }
+    if (coins > 0)
+        h += `<div class="offRow"><span class="ic">${ic('coin')}</span>
+            <b>${T('Продавец наторговал')}</b><em>+${fmt(coins)}</em></div>`;
+    if (!h) h = `<div class="hint">${T('ничего не изменилось')}</div>`;
+    $('offlineList').innerHTML = h;
+
     $('offlineTake').textContent = T('Отлично');
-    // возвращение из офлайна — тоже естественная пауза: игрок ещё ничего не начал
-    // после офлайн-сводки сперва отдаём награду за серию, и только иначе — рекламу
+    // после офлайн-сводки сразу отдаём награду за серию, если она ждёт
     $('offlineTake').onclick = () => {
         closeModal('offlineModal');
-        setTimeout(() => { if (streakPending()) showStreakModal(); else breakAd(); }, 400);
+        setTimeout(() => { if (streakPending()) showStreakModal(); }, 400);
     };
     $('offlineX2').style.display = '';
     $('offlineX2').innerHTML = icc('ad') + T('Продолжить x2');

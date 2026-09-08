@@ -37,7 +37,6 @@ function freshState() {
         animT: { hen:0, cow:0, sheep:0 },
         orders: [],
         ordTok: ORDER_SLOTS, ordTokT: Date.now(),  // «ведро» появления заказов
-        ordSkipT: 0, ordSkipN: 0,                   // окно/счётчик смен заданий
         quests: [], qday: '', chestClaimed: false,
         ach: {},
         cnt: { harvests:0, sold:0, planted:0, orders:0, taps:0, aprods:0, goldens:0, prestiges:0,
@@ -213,6 +212,10 @@ function fetchLeaderboard(cb, fresh) {
 }
 
 // ---------- Экономика ----------
+// Награды (серия, квесты, сундук) начисляем отдельно от earn(): они не идут
+// в lifeEarned и не влияют на ips, иначе престиж и прогноз офлайна раздувались
+// бы подарками, а не реальным фермерством.
+function grant(a) { S.coins += a; }
 function earn(a) {
     S.coins += a;
     S.seasonEarned += a;
@@ -387,9 +390,33 @@ function ensureOrders() {
     for (let k = 0; k < ORDER_SLOTS; k++)
         if (!S.orders[k] && S.ordTok >= 1) { S.orders[k] = rollOrder(); S.ordTok -= 1; }
 }
-function skipsLeft() {
-    if (!S.ordSkipT || Date.now() - S.ordSkipT >= SKIP_WINDOW_MS) return SKIP_MAX;
-    return Math.max(0, SKIP_MAX - (S.ordSkipN || 0));
+// Смена задания и квеста — без лимита, каждая за добровольный ролик.
+function adSkipOrder(k) {
+    if (!S.orders[k]) return;
+    showRewarded(() => {
+        if (!S.orders[k]) return;
+        S.orders[k] = rollOrder();     // «ведро» появления заказов не тратим
+        sfx('click');
+        persist(true);
+        renderOrders();
+    });
+}
+// Квест дня меняем на другой из пула, которого сейчас нет в списке.
+function adRerollQuest(k) {
+    const q = S.quests[k];
+    if (!q || q.claimed) return;
+    showRewarded(() => {
+        const cur = S.quests.map(x => x.id);
+        const free = QPOOL.filter(x => cur.indexOf(x.id) < 0);
+        const pick = free.length ? free[Math.floor(Math.random() * free.length)] : null;
+        if (!pick) { toast(T('Другие квесты закончились')); return; }
+        const tier = questTier();
+        S.quests[k] = { id:pick.id, cnt:pick.cnt, name:pick.name, n:pick.n[tier],
+                        start:S.cnt[pick.cnt], claimed:false, reward:questReward(tier) };
+        sfx('click');
+        persist(true);
+        renderOrders();
+    });
 }
 function fulfillOrder(k) {
     const o = S.orders[k];
@@ -421,17 +448,6 @@ function adSkipOrder(k) {
         renderOrders();
     });
 }
-function skipOrder(k) {
-    if (!S.orders[k]) return;
-    const now = Date.now();
-    if (!S.ordSkipT || now - S.ordSkipT >= SKIP_WINDOW_MS) { S.ordSkipT = now; S.ordSkipN = 0; }
-    if (S.ordSkipN >= SKIP_MAX) { sfx('error'); toast(T('Смена заданий: лимит {max} за 2 часа', { max: SKIP_MAX })); return; }
-    S.ordSkipN++;
-    S.orders[k] = rollOrder();     // смена в том же слоте — «ведро» появления не тратим
-    sfx('click');
-    persist(true);
-    renderOrders();
-}
 
 // ---------- Квесты дня ----------
 function questTier() { return S.bestIps < 50 ? 0 : S.bestIps < 1000 ? 1 : 2; }
@@ -454,7 +470,7 @@ function claimQuest(k) {
     const q = S.quests[k];
     if (q.claimed || qProg(q) < q.n) return;
     q.claimed = true;
-    earn(q.reward);
+    grant(q.reward);
     sfx('quest');
     toast(T('Квест выполнен! +{n} монет', { n: fmt(q.reward) }));
     persist(true);
@@ -465,7 +481,7 @@ function claimChest(mult) {
     mult = mult || 1;
     S.chestClaimed = true;
     const r = chestReward();
-    earn(r.coins * mult);
+    grant(r.coins * mult);
     S.seeds += r.seed * mult;
     sfx('chest');
     toast(T('Сундук: +{n} монет и +{s} золотых семян!', { n: fmt(r.coins * mult), s: r.seed * mult }));
@@ -521,9 +537,7 @@ function doPrestige() {
     toast(T('Новый сезон! +{p} золотых семян', { p }));
     fxPrestige();
     persist(true);
-    // конец сезона — яркий момент: сперва пробуем позвать на оценку,
-    // и только если она недоступна, показываем обычную рекламную паузу
-    maybeAskReview(breakAd);
+    maybeAskReview();          // конец сезона — яркий момент, зовём на оценку
     closeAllSheets();
     renderHud();
     checkAch();
@@ -544,7 +558,7 @@ function claimStreak(mult) {
     S.streakDay = todayStr();
     const coins = streakCoins(i) * mult;
     const seeds = STREAK_SEEDS[i] * mult;
-    earn(coins);
+    grant(coins);
     S.seeds += seeds;
     sfx('chest');
     toast(seeds
@@ -606,57 +620,6 @@ function shortcutAccept() {
 }
 function shortcutDecline() { S.scAsked = true; persist(true); }
 
-// ---------- Межстраничная реклама ----------
-// Частоту показа регулирует сама платформа: если позвать слишком часто, показа
-// не будет и onClose вернёт wasShown:false. Поверх этого держим свои правила,
-// чтобы реклама не приедалась и не ловила игрока посреди действия — площадка
-// прямо не советует показывать её во время активной игры (риск случайных кликов).
-const AD_IDLE_S   = 30;    // столько игрок должен ничего не делать
-const AD_GAP_S    = 210;   // минимум между показами
-const AD_WARMUP_S = 90;    // тишина в начале сессии, чтобы не встречать рекламой
-const AD_RETRY_S  = 45;    // платформа показ не отдала — вернёмся раньше
-let lastInputAt = 0, nextAdAt = 0, adBusy = false;
-
-function noteInput() { lastInputAt = Date.now(); }
-function adAvailable() {
-    return !!(ysdk && ysdk.adv && typeof ysdk.adv.showFullscreenAdv === 'function');
-}
-function showInterstitial() {
-    if (adBusy || !adAvailable()) return false;
-    adBusy = true;
-    const finish = wasShown => {
-        adBusy = false;
-        audioResume();
-        // паузу отсчитываем от факта показа: не показали — пробуем раньше
-        nextAdAt = Date.now() + (wasShown ? AD_GAP_S : AD_RETRY_S) * 1000;
-    };
-    try {
-        ysdk.adv.showFullscreenAdv({ callbacks: {
-            onOpen:  () => audioSuspend(),          // §4.7: на время ролика игра молчит
-            onClose: wasShown => finish(!!wasShown),
-            onError: () => finish(false),
-        }});
-    } catch(e) { finish(false); }
-    return true;
-}
-// Общие условия: игра запущена, вкладка на экране, пауза выдержана, поверх
-// ничего не открыто и не идёт оплаченный рекламой буст — его перебивать нечестно.
-function adAllowed() {
-    if (!booted || adBusy || document.hidden) return false;
-    if (Date.now() < nextAdAt) return false;
-    if (document.querySelector('.sheet.open, .modal.open')) return false;
-    if (boostOn()) return false;
-    return true;
-}
-// Простой: игрок ничего не нажимает — самый безопасный момент для показа.
-function idleAdTick() {
-    if (!adAllowed()) return;
-    if (Date.now() - lastInputAt < AD_IDLE_S * 1000) return;
-    showInterstitial();
-}
-// Естественная пауза (конец сезона, возвращение из офлайна) — простой не нужен.
-function breakAd() { if (adAllowed()) showInterstitial(); }
-
 // ---------- Реклама (rewarded) ----------
 function showRewarded(cb) {
     if (ysdk && ysdk.adv) {
@@ -668,8 +631,7 @@ function showRewarded(cb) {
                 // поэтому visibilitychange здесь не сработает и глушим вручную
                 onOpen:     () => audioSuspend(),
                 onRewarded: pay,
-                // после добровольного ролика межстраничную сразу не показываем
-                onClose:    () => { audioResume(); nextAdAt = Date.now() + AD_GAP_S * 1000; },
+                onClose:    () => audioResume(),
                 onError:    () => { audioResume(); pay(); },   // ошибка — награду всё равно даём
             }});
             return;
@@ -908,20 +870,32 @@ function fastForward(t) {
 }
 function offlineCheck() {
     const dt = Math.max(0, (Date.now() - S.time) / 1000);
-    if (dt < 60) return;
+    if (dt < OFFLINE_MIN) return;
     offlineT = Math.min(dt, OFFLINE_CAP);
-    const c0 = Math.floor(S.coins), st0 = storeTotal();
+    const c0 = Math.floor(S.coins);
+    const before = Object.assign({}, S.store);
     fastForward(offlineT);
     const coins = Math.floor(S.coins) - c0;      // продавец наторговал
-    const store = storeTotal() - st0;            // работники собрали на склад
-    if (coins > 0 || store > 0) showOfflineModal(coins, store, offlineT);
+    // что именно прибавилось на складе: показываем чистый прирост по товарам,
+    // проданное продавцом уже отражено в монетах
+    const gained = {};
+    let store = 0;
+    for (const id in S.store) {
+        const d = S.store[id] - (before[id] || 0);
+        if (d > 0) { gained[id] = d; store += d; }
+    }
+    // Короткие отлучки не отчитываем: сводка ради пары минут только мешает.
+    if (dt < OFFLINE_REPORT) return;
+    if (coins > 0 || store > 0) showOfflineModal(coins, gained, store, offlineT);
 }
 // Прогноз офлайн-дохода для подсказки на складе — причина вернуться завтра.
 // Точную цифру дала бы только симуляция, но она мутирует состояние и попутно
 // дёргает звуки и достижения, поэтому это приближение по текущему темпу — «≈».
 // Без продавца офлайн никто не торгует, значит и монет не будет.
 function offlineForecast() {
-    if (!S || !S.workers.seller) return 0;
+    // Нужна вся цепочка: сеятель сажает, сборщик собирает, продавец продаёт.
+    // Без любого звена офлайн-доход не идёт, и обещать его нельзя.
+    if (!S || !S.workers.harv || !S.workers.sow || !S.workers.seller) return 0;
     return Math.round(S.ips * OFFLINE_CAP);
 }
 // «продолжить» (реклама): ещё столько же времени работы
@@ -1014,10 +988,6 @@ function boot(raw) {
     // встречать окном «ты вернулся» бессмысленно, его серия начнётся со второго
     // захода. Если открыта офлайн-сводка, окно покажется после неё.
     if (S.tut >= 3 && streakPending() && !document.querySelector('.modal.open')) showStreakModal();
-    // реклама по простою: раз в секунду, вся логика окон и пауз внутри
-    lastInputAt = Date.now();
-    nextAdAt = Date.now() + AD_WARMUP_S * 1000;
-    setInterval(idleAdTick, 1000);
     // ярлык предлагаем не сразу, а когда игрок уже втянулся
     setTimeout(shortcutOffer, 150000);
     signalReady();                            // сначала сообщаем платформе…

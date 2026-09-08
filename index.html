@@ -213,6 +213,15 @@ button { font-family:inherit; color:var(--ink); }
 .sndRow input[type=range]::-moz-range-thumb { width:24px; height:24px; border-radius:50%; background:var(--green);
     border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
 
+/* ---------- офлайн-сводка ---------- */
+#offlineList { margin:12px 0 14px; }
+.offRow { display:flex; align-items:center; gap:9px; background:var(--card); border-radius:14px;
+    padding:7px 11px; margin-bottom:6px; box-shadow:0 1px 4px rgba(96,74,52,.1); }
+.offRow .ic { width:26px; height:26px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.offRow .ic svg { width:100%; height:100%; }
+.offRow b { flex:1; text-align:left; font-size:13px; }
+.offRow em { font-style:normal; font-weight:800; font-size:13.5px; color:#7d9a5c; }
+
 /* ---------- ежедневная серия ---------- */
 .streakRow { display:flex; gap:5px; justify-content:center; margin:14px 0 16px; }
 .streakDay { flex:1; max-width:44px; border-radius:12px; background:var(--cream); padding:7px 2px 6px;
@@ -351,6 +360,7 @@ button { font-family:inherit; color:var(--ink); }
     <div class="mbox">
         <h2><span class="fico" data-ico="moon"></span><span data-t="С возвращением!">С возвращением!</span></h2>
         <p id="offlineInfo"></p>
+        <div id="offlineList"></div>
         <button class="bbtn" id="offlineX2" data-t="Забрать x2"><span class="ci" data-ico="ad"></span>Забрать x2</button>
         <button class="bbtn" id="offlineTake" data-t="Забрать">Забрать</button>
     </div>

@@ -155,19 +155,46 @@ const dayBefore2 = () => new Date(Date.now() - 2 * 86400000).toISOString().slice
     await ctx.close();
 }
 
-// ---------- смена задания за ролик сверх лимита ----------
+// ---------- награды не раздувают престиж ----------
 {
     const { ctx, page } = await launch();
     const res = await page.evaluate(async () => {
-        ensureOrders();
-        S.ordSkipT = Date.now(); S.ordSkipN = SKIP_MAX;    // лимит исчерпан
-        const before = JSON.stringify(S.orders[0]);
-        adSkipOrder(0);
-        await new Promise(r => setTimeout(r, 300));
-        return { rewarded: __t.rewarded, changed: JSON.stringify(S.orders[0]) !== before, skips: S.ordSkipN };
+        S.tut = 3; S.bestIps = 50; S.streakDay = '';
+        S.quests.forEach(q => q.claimed = true); S.chestClaimed = false;
+        const life0 = S.lifeEarned, ips0 = S.ips;
+        claimStreak(1);
+        claimChest(1);
+        return { life: S.lifeEarned - life0, ips: S.ips - ips0, coins: Math.floor(S.coins) > 0 };
     });
-    ok('сверх лимита заказ меняется за ролик', res.rewarded === 1 && res.changed, res);
-    ok('ролик не тратит лимит бесплатных смен', res.skips === 4, res);
+    ok('подарки не идут в престиж (lifeEarned)', res.life === 0, res);
+    ok('подарки не раздувают доход в секунду', res.ips === 0, res);
+    ok('монеты при этом начислены', res.coins, res);
+    await ctx.close();
+}
+
+// ---------- офлайн: короткие отлучки не отчитываем ----------
+{
+    const { ctx, page } = await launch();
+    const res = await page.evaluate(async ({ min, report }) => {
+        S.workers.harv = 4; S.workers.sow = 4; S.workers.seller = 4;
+        S.plots.forEach(p => { p.c = 0; p.t = 999; });
+        const short = { c: Math.floor(S.coins), s: storeTotal() };
+        S.time = Date.now() - (report - 600) * 1000;      // отлучка меньше порога сводки
+        offlineCheck();
+        const shownShort = document.getElementById('offlineModal').classList.contains('open');
+        const grewShort = Math.floor(S.coins) > short.c || storeTotal() > short.s;
+
+        S.time = Date.now() - (report + 3600) * 1000;     // а теперь долгая
+        offlineCheck();
+        const shownLong = document.getElementById('offlineModal').classList.contains('open');
+        return { shownShort, grewShort, shownLong,
+                 rows: document.querySelectorAll('#offlineList .offRow').length,
+                 text: document.getElementById('offlineInfo').textContent.trim() };
+    }, { min: 60, report: 5 * 3600 });
+    ok('короткая отлучка не показывает сводку', res.shownShort === false, res);
+    ok('но доход за неё всё равно начислен', res.grewShort, res);
+    ok('после долгой отлучки сводка появляется', res.shownLong, res);
+    ok('в сводке перечислено, что принесли работники', res.rows > 0, res);
     await ctx.close();
 }
 
@@ -175,15 +202,20 @@ const dayBefore2 = () => new Date(Date.now() - 2 * 86400000).toISOString().slice
 {
     const { ctx, page } = await launch();
     const res = await page.evaluate(() => {
-        S.workers.seller = 0; S.ips = 100;
-        const noSeller = offlineForecast();
-        S.workers.seller = 2;
-        const withSeller = offlineForecast();
+        S.ips = 100;
+        S.workers.harv = 0; S.workers.sow = 0; S.workers.seller = 3;
+        const sellerOnly = offlineForecast();
+        S.workers.harv = 2; S.workers.sow = 2;
+        const full = offlineForecast();
         openSheet('barnSheet'); renderBarn();
-        return { noSeller, withSeller, text: document.getElementById('barnOffline').textContent.trim() };
+        const withFull = document.getElementById('barnOffline').textContent.trim();
+        S.workers.seller = 0; renderBarn();
+        const without = document.getElementById('barnOffline').textContent.trim();
+        return { sellerOnly, full, withFull, without };
     });
-    ok('без продавца офлайн-дохода не обещаем', res.noSeller === 0, res);
-    ok('с продавцом показываем прогноз', res.withSeller > 0 && res.text.length > 0, res);
+    ok('без полного набора работников прогноз не обещаем', res.sellerOnly === 0, res);
+    ok('с полным набором прогноз есть', res.full > 0 && res.withFull.length > 0, res);
+    ok('без работников строка пустая, а не нытьё', res.without === '', res);
     await ctx.close();
 }
 

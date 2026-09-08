@@ -1,5 +1,6 @@
-// Межстраничная реклама: показывается по простою и в естественных паузах,
-// но не должна приедаться и не должна ловить игрока посреди действия.
+// Вся реклама в игре — только добровольная (rewarded). Проверяем каждый слот:
+// ролик показывается, звук на время ролика глушится, награда доходит,
+// и нигде не осталось принудительной межстраничной рекламы.
 import { chromium } from 'playwright';
 
 const BASE = 'http://localhost:8347/';
@@ -12,8 +13,8 @@ const ok = (name, cond, extra) => {
     if (!cond) failed++;
 };
 
-const MOCK = ({ wasShown = true, canShortcut = false } = {}) => {
-    window.__ads = { full: 0, rewarded: 0, audio: [], shortcutPrompts: 0 };
+const MOCK = () => {
+    window.__ads = { rewarded: 0, full: 0, audioAtAd: [] };
     window.YaGames = { init: () => Promise.resolve({
         environment: { i18n: { lang: 'ru' } },
         getPlayer: () => Promise.resolve({
@@ -23,194 +24,154 @@ const MOCK = ({ wasShown = true, canShortcut = false } = {}) => {
         auth: { openAuthDialog: () => Promise.resolve() },
         features: { LoadingAPI: { ready: () => {} } },
         leaderboards: { setScore: () => Promise.resolve(), getEntries: () => Promise.resolve({ userRank: 0, entries: [] }) },
-        shortcut: {
-            canShowPrompt: () => Promise.resolve({ canShow: canShortcut }),
-            showPrompt: () => { window.__ads.shortcutPrompts++; return Promise.resolve({ outcome: 'accepted' }); },
-        },
+        shortcut: { canShowPrompt: () => Promise.resolve({ canShow: false }), showPrompt: () => Promise.resolve({}) },
+        feedback: { canReview: () => Promise.resolve({ value: false, reason: 'GAME_RATED' }), requestReview: () => Promise.resolve({}) },
         adv: {
+            // если её кто-то позовёт — тест это заметит
             showFullscreenAdv: ({ callbacks }) => {
                 window.__ads.full++;
-                setTimeout(() => {
-                    callbacks.onOpen && callbacks.onOpen();
-                    window.__ads.audio.push(window.__audioState());
-                    callbacks.onClose && callbacks.onClose(wasShown);
-                }, 30);
+                setTimeout(() => callbacks && callbacks.onClose && callbacks.onClose(true), 20);
             },
             showRewardedVideo: ({ callbacks }) => {
                 window.__ads.rewarded++;
                 setTimeout(() => {
                     callbacks.onOpen && callbacks.onOpen();
+                    window.__ads.audioAtAd.push(window.__audioState());
                     callbacks.onRewarded && callbacks.onRewarded();
                     callbacks.onClose && callbacks.onClose(true);
-                }, 30);
+                }, 25);
             },
         },
     })};
 };
 
-async function launch(opts) {
-    const ctx = await browser.newContext({ viewport: { width: 1000, height: 720 } });
+async function launch() {
+    const ctx = await browser.newContext({ viewport: { width: 1000, height: 760 } });
     const page = await ctx.newPage();
     await page.route('https://yandex.ru/**', r => r.abort());
-    await page.addInitScript(MOCK, opts);
+    await page.addInitScript(MOCK);
     await page.goto(BASE);
     await page.waitForFunction(() => window.render_game_to_text && (() => {
         try { return !!JSON.parse(window.render_game_to_text()).plots; } catch (e) { return false; }
     })(), null, { timeout: 25000 });
     await page.waitForTimeout(600);
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
         window.__audioState = () => {
             try { return (typeof audioContext !== 'undefined' && audioContext) ? audioContext.state : 'none'; }
             catch (e) { return 'none'; }
         };
-        // помощник: сделать вид, что игрок давно бездействует и пауза выдержана
-        window.__idle = () => { lastInputAt = Date.now() - AD_IDLE_S * 1000 - 1000; nextAdAt = 0; };
+        S.musVol = 0.5; audioResume();
+        await new Promise(r => setTimeout(r, 250));
     });
     return { ctx, page };
 }
 
-// ---------- в начале сессии рекламы нет ----------
+// Каждый слот: действие -> ожидаемый эффект
+const SLOTS = [
+    ['буст «Доход x2»', async page => page.evaluate(async () => {
+        const before = boostOn();
+        adBoost();
+        await new Promise(r => setTimeout(r, 400));
+        return { ok: !before && boostOn() };
+    })],
+    ['«Дорастить всё»', async page => page.evaluate(async () => {
+        S.plots.forEach(p => { p.c = 0; p.t = 0; });
+        adGrowAll();
+        await new Promise(r => setTimeout(r, 400));
+        return { ok: S.plots.every(p => p.c < 0 || p.t >= cropGrow(CROPS[p.c])), cd: S.adGrowAt > Date.now() };
+    })],
+    ['офлайн «Продолжить x2»', async page => page.evaluate(async () => {
+        S.workers.harv = 3; S.workers.sow = 3; S.workers.seller = 3;
+        S.plots.forEach(p => { p.c = 0; p.t = 999; });
+        offlineT = 3600;
+        const c0 = Math.floor(S.coins), s0 = storeTotal();
+        showRewarded(() => offlineBonus());
+        await new Promise(r => setTimeout(r, 400));
+        return { ok: Math.floor(S.coins) > c0 || storeTotal() > s0 };
+    })],
+    ['серия «Забрать x2»', async page => page.evaluate(async () => {
+        S.tut = 3; S.bestIps = 10; S.streakDay = '';
+        const c0 = Math.floor(S.coins);
+        showRewarded(() => claimStreak(2));
+        await new Promise(r => setTimeout(r, 400));
+        return { ok: Math.floor(S.coins) > c0 && S.streak === 1 };
+    })],
+    ['сундук x2', async page => page.evaluate(async () => {
+        S.bestIps = 10;
+        S.quests.forEach(q => q.claimed = true);
+        S.chestClaimed = false;
+        const s0 = S.seeds;
+        adChest();
+        await new Promise(r => setTimeout(r, 400));
+        return { ok: S.seeds - s0 === 2 && S.chestClaimed };
+    })],
+    ['смена заказа', async page => page.evaluate(async () => {
+        // открываем все культуры: с одной пшеницей новый заказ может случайно
+        // совпасть со старым, и проверка «изменилось» ловила бы совпадение
+        S.crops = S.crops.map(() => true);
+        ensureOrders();
+        const before = JSON.stringify(S.orders[0]);
+        adSkipOrder(0);
+        await new Promise(r => setTimeout(r, 400));
+        return { ok: JSON.stringify(S.orders[0]) !== before };
+    })],
+    ['смена квеста дня', async page => page.evaluate(async () => {
+        ensureQuests();
+        const before = S.quests[0].id;
+        adRerollQuest(0);
+        await new Promise(r => setTimeout(r, 400));
+        return { ok: S.quests[0].id !== before && !S.quests[0].claimed };
+    })],
+];
+
+for (const [name, run] of SLOTS) {
+    const { ctx, page } = await launch();
+    const before = await page.evaluate(() => __ads.rewarded);
+    const res = await run(page);
+    const after = await page.evaluate(() => ({ n: __ads.rewarded, audio: __ads.audioAtAd }));
+    ok(`${name}: ролик показан`, after.n === before + 1, after.n);
+    ok(`${name}: награда выдана`, res.ok, res);
+    ok(`${name}: звук на время ролика заглушён`, after.audio.every(a => a !== 'running'), after.audio);
+    await ctx.close();
+}
+
+// ---------- смена задания больше не лимитируется ----------
 {
     const { ctx, page } = await launch();
     const res = await page.evaluate(async () => {
-        lastInputAt = Date.now() - AD_IDLE_S * 1000 - 5000;   // игрок бездействует…
-        idleAdTick();                                          // …но сессия только началась
-        await new Promise(r => setTimeout(r, 200));
-        return { shown: __ads.full, warmupLeft: nextAdAt > Date.now() };
+        S.crops = S.crops.map(() => true);
+        ensureOrders();
+        const seen = new Set();
+        for (let i = 0; i < 6; i++) {
+            adSkipOrder(0);
+            await new Promise(r => setTimeout(r, 120));
+            seen.add(JSON.stringify(S.orders[0]));
+        }
+        return { rewarded: __ads.rewarded, variants: seen.size };
     });
-    ok('в прогреве сессии реклама не показывается', res.shown === 0 && res.warmupLeft, res);
+    ok('шесть смен подряд проходят без лимита', res.rewarded === 6, res);
     await ctx.close();
 }
 
-// ---------- активная игра рекламу не прерывает ----------
+// ---------- принудительной рекламы не осталось ----------
 {
     const { ctx, page } = await launch();
     const res = await page.evaluate(async () => {
-        nextAdAt = 0;
-        lastInputAt = Date.now();          // игрок только что нажимал
-        idleAdTick();
-        await new Promise(r => setTimeout(r, 200));
-        return __ads.full;
+        // сидим без действий заметно дольше прежнего порога простоя
+        await new Promise(r => setTimeout(r, 4000));
+        return { full: __ads.full, hasIdle: typeof idleAdTick, hasBreak: typeof breakAd };
     });
-    ok('во время активной игры реклама не показывается', res === 0, { shown: res });
+    ok('межстраничная не показывается сама', res.full === 0, res);
+    ok('код принудительной рекламы удалён',
+       res.hasIdle === 'undefined' && res.hasBreak === 'undefined', res);
     await ctx.close();
 }
 
-// ---------- простой -> показ ----------
+// ---------- кулдаун «дорастить всё» стал короче ----------
 {
     const { ctx, page } = await launch();
-    const res = await page.evaluate(async () => {
-        S.musVol = 0.5; audioResume();
-        await new Promise(r => setTimeout(r, 250));
-        __idle(); idleAdTick();
-        await new Promise(r => setTimeout(r, 300));
-        return { shown: __ads.full, audio: __ads.audio };
-    });
-    ok('после простоя реклама показана', res.shown === 1, res);
-    ok('§4.7 звук на время ролика заглушён', res.audio[0] !== 'running', res.audio);
-    await ctx.close();
-}
-
-// ---------- пауза между показами ----------
-{
-    const { ctx, page } = await launch();
-    const res = await page.evaluate(async () => {
-        __idle(); idleAdTick();
-        await new Promise(r => setTimeout(r, 300));
-        const after = { shown: __ads.full, gapS: Math.round((nextAdAt - Date.now()) / 1000) };
-        // сразу пробуем ещё раз, продолжая бездействовать
-        lastInputAt = Date.now() - AD_IDLE_S * 1000 - 1000;
-        idleAdTick(); idleAdTick(); idleAdTick();
-        await new Promise(r => setTimeout(r, 300));
-        after.total = __ads.full;
-        return after;
-    });
-    ok('повторные попытки в паузу не показывают рекламу', res.total === 1, res);
-    ok('пауза между показами близка к AD_GAP_S', res.gapS >= 180, res);
-    await ctx.close();
-}
-
-// ---------- если платформа показ не отдала, ждём меньше ----------
-{
-    const { ctx, page } = await launch({ wasShown: false });
-    const gap = await page.evaluate(async () => {
-        __idle(); idleAdTick();
-        await new Promise(r => setTimeout(r, 300));
-        return Math.round((nextAdAt - Date.now()) / 1000);
-    });
-    ok('при wasShown:false пауза короче', gap > 0 && gap <= 60, { gapS: gap });
-    await ctx.close();
-}
-
-// ---------- не поверх открытых панелей ----------
-{
-    const { ctx, page } = await launch();
-    const res = await page.evaluate(async () => {
-        openSheet('shopSheet');
-        __idle(); idleAdTick();
-        await new Promise(r => setTimeout(r, 250));
-        return __ads.full;
-    });
-    ok('поверх открытой панели рекламы нет', res === 0, { shown: res });
-    await ctx.close();
-}
-
-// ---------- не перебиваем оплаченный рекламой буст ----------
-{
-    const { ctx, page } = await launch();
-    const res = await page.evaluate(async () => {
-        S.boostUntil = Date.now() + 120000;
-        __idle(); idleAdTick();
-        await new Promise(r => setTimeout(r, 250));
-        return __ads.full;
-    });
-    ok('во время буста за rewarded рекламы нет', res === 0, { shown: res });
-    await ctx.close();
-}
-
-// ---------- rewarded отодвигает межстраничную ----------
-{
-    const { ctx, page } = await launch();
-    const res = await page.evaluate(async () => {
-        nextAdAt = 0;
-        document.getElementById('growBtn').click();     // добровольный ролик
-        await new Promise(r => setTimeout(r, 300));
-        const gapS = Math.round((nextAdAt - Date.now()) / 1000);
-        lastInputAt = Date.now() - AD_IDLE_S * 1000 - 1000;
-        idleAdTick();
-        await new Promise(r => setTimeout(r, 250));
-        return { rewarded: __ads.rewarded, full: __ads.full, gapS };
-    });
-    ok('сразу после rewarded межстраничной нет', res.rewarded === 1 && res.full === 0, res);
-    await ctx.close();
-}
-
-// ---------- ярлык на главный экран ----------
-{
-    const { ctx, page } = await launch({ canShortcut: true });
-    const res = await page.evaluate(async () => {
-        const seeds0 = S.seeds;
-        shortcutOffer();
-        await new Promise(r => setTimeout(r, 300));
-        const opened = document.getElementById('shortcutModal').classList.contains('open');
-        document.getElementById('shortcutGo').click();
-        await new Promise(r => setTimeout(r, 300));
-        return { opened, prompts: __ads.shortcutPrompts, gained: S.seeds - seeds0, asked: S.scAsked, done: S.scDone };
-    });
-    ok('карточка ярлыка показана', res.opened, res);
-    ok('нативный промпт вызван по нажатию', res.prompts === 1, res);
-    ok('за установку выдана награда', res.gained === 1 && res.done, res);
-    await ctx.close();
-}
-{
-    const { ctx, page } = await launch({ canShortcut: true });
-    const res = await page.evaluate(async () => {
-        S.scAsked = true;                 // уже предлагали
-        shortcutOffer();
-        await new Promise(r => setTimeout(r, 300));
-        return document.getElementById('shortcutModal').classList.contains('open');
-    });
-    ok('повторно ярлык не навязывается', res === false);
+    const cd = await page.evaluate(() => AD_GROW_CD);
+    ok('кулдаун «дорастить всё» ≤ 60 c', cd <= 60, { AD_GROW_CD: cd });
     await ctx.close();
 }
 

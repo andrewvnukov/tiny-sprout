@@ -98,8 +98,8 @@ const prestigeUnlocked = () => S.cnt.prestiges > 0 || pendingSeeds() >= 1;
 const ORDER_MULT = 1.6;    // цена заказа против рынка
 const ORDER_SLOTS = 3;
 const ORDERS_PER_HOUR = 6;              // сколько НОВЫХ заказов появляется за час (не бесконечно)
-const SKIP_MAX = 4;                     // сколько раз можно сменить задание…
-const SKIP_WINDOW_MS = 2 * 3600 * 1000; // …за это окно (2 часа)
+// Смена задания больше не лимитируется: любое количество раз за просмотр
+// ролика. Лимит превращал тупик в отказ, а теперь это выбор игрока.
 function rollOrder() {
     const open = CROPS.map((c,i)=>i).filter(i => S.crops[i]);
     const i = open[Math.floor(Math.random()*open.length)];
@@ -147,12 +147,13 @@ const STREAK_SEEDS = [0, 0, 1, 0, 0, 0, 2];              // индекс = де�
 const streakCoins = i => Math.max(300, Math.round(S.bestIps * 60 * (2 + i)));
 
 // ---------- Офлайн ----------
-const OFFLINE_RATE = .5;          // доля от дохода
-const OFFLINE_CAP  = 4*3600;      // сек
+const OFFLINE_CAP    = 4*3600;    // сколько максимум «доигрывается» офлайн, сек
+const OFFLINE_MIN    = 60;        // с какой отлучки вообще начисляем, сек
+const OFFLINE_REPORT = 5*3600;    // с какой отлучки показываем сводку, сек
 
 // ---------- Реклама ----------
 const BOOST_MIN = 3;              // буст x2, минут
-const AD_GROW_CD = 300;           // «дорастить всё», сек кулдаун
+const AD_GROW_CD = 60;            // «дорастить всё», сек кулдаун
 
 // ---------- Форматирование чисел ----------
 function fmt(n) {
