@@ -44,6 +44,7 @@ function freshState() {
         boostUntil: 0, adGrowAt: 0,
         scAsked: false, scDone: false,   // предлагали / добавили ярлык на экран
         streak: 0, streakDay: '',        // серия заходов и дата последнего получения
+        tips: {},                        // показанные контекстные подсказки
         reviewAsked: false,              // просили оценить игру
         sfxVol: .5, musVol: .5,     // громкость эффектов и музыки (0..1, 0.5 = базовая)
         time: Date.now(),
@@ -95,6 +96,7 @@ function restore(raw) {
         if (typeof f.workers.seller !== 'number') f.workers.seller = (typeof f.workers.tract === 'number' ? f.workers.tract : 0);
         delete f.workers.tract;
         for (const k in f.animals) if (typeof f.animals[k] !== 'number') f.animals[k] = 0;
+        if (!f.tips || typeof f.tips !== 'object') f.tips = {};
         const c = freshState().cnt;
         f.cnt = Object.assign(c, f.cnt);
         // миграция на суммарную модель престижа: у старых сейвов нет claimedSeeds —
@@ -997,6 +999,7 @@ function boot(raw) {
     // встречать окном «ты вернулся» бессмысленно, его серия начнётся со второго
     // захода. Если открыта офлайн-сводка, окно покажется после неё.
     if (S.tut >= 3 && streakPending() && !document.querySelector('.modal.open')) showStreakModal();
+    setInterval(tipTick, 1000);   // контекстные подсказки: условия проверяем раз в секунду
     // ярлык предлагаем не сразу, а когда игрок уже втянулся
     setTimeout(shortcutOffer, 150000);
     signalReady();                            // сначала сообщаем платформе…

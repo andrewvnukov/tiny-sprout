@@ -172,6 +172,12 @@ const EN = {
     'Добавить':'Add',
     'Ярлык добавлен! +{n} золотое семя':'Shortcut added! +{n} golden seed',
 
+    // ---------- контекстные подсказки ----------
+    'Хочешь монет вдвое больше?<br>Посмотри короткий ролик {icon}':
+        'Want twice the coins?<br>Watch a short video {icon}',
+    'Наними работников {icon} — ферма<br>будет приносить монеты без тебя':
+        'Hire workers {icon} — the farm<br>will earn coins without you',
+
     // ---------- туториал ----------
     'Тапни по грядке,<br>чтобы посадить {icon}':'Tap a plot<br>to plant {icon}',
     'Подожди чуть-чуть…<br>и собери урожай!':'Wait a moment…<br>then harvest it!',

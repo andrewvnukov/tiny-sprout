@@ -181,14 +181,23 @@ button { font-family:inherit; color:var(--ink); }
 .mbox .bbtn { margin:4px; }
 
 /* ---------- туториал ---------- */
-#tut { position:fixed; z-index:15; transform:translate(-50%, -100%); pointer-events:none; text-align:center; }
-#tut.side { transform:translate(-100%, -50%); }
-#tutText { background:var(--card); border-radius:15px; padding:9px 13px;
-    font-family:'Neucha', 'Nunito', sans-serif; font-size:16px; box-shadow:var(--shadow); }
-#tutText .ci { width:15px; height:15px; }
-#tutArrow { margin-top:2px; animation:bounce .7s infinite alternate; }
-#tutArrow .fico { width:26px; height:26px; filter:drop-shadow(0 2px 2px rgba(96,74,52,.3)); }
-#tut.side #tutArrow .fico { transform:rotate(-90deg); }
+/* ширина задана явно: без неё fixed-элемент раскладывается в остатке места
+   справа от left, и в side-режиме текст сжимается в узкую колонку —
+   transform применяется уже после расчёта ширины */
+.bubble { position:fixed; z-index:15; width:230px; transform:translate(-50%, -100%);
+    pointer-events:none; text-align:center; }
+.bubble.side { transform:translate(-100%, -50%); }
+.bubble .btxt { background:var(--card); border-radius:15px; padding:9px 13px;
+    font-family:'Neucha', 'Nunito', sans-serif; font-size:16px; line-height:1.25; box-shadow:var(--shadow); }
+.bubble .btxt .ci { width:15px; height:15px; }
+.bubble .barrow { margin-top:2px; animation:bounce .7s infinite alternate; }
+.bubble .barrow .fico { width:26px; height:26px; filter:drop-shadow(0 2px 2px rgba(96,74,52,.3)); }
+.bubble.side .barrow .fico { transform:rotate(-90deg); }
+/* подсвечиваем саму кнопку: одной стрелки мало, когда рядом другие элементы */
+.tipTarget { position:relative; z-index:16;
+    outline:3px solid var(--gold); outline-offset:2px;
+    animation:tipPulse 1.2s ease-in-out infinite; }
+@keyframes tipPulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.07); } }
 @keyframes bounce { from { transform:translateY(0); } to { transform:translateY(7px); } }
 
 /* ---------- тост ---------- */
@@ -394,9 +403,13 @@ button { font-family:inherit; color:var(--ink); }
 </div>
 
 <!-- Туториал и тост -->
-<div id="tut" style="display:none">
-    <div id="tutText"></div>
-    <div id="tutArrow"><span class="fico" data-ico="down"></span></div>
+<div id="tut" class="bubble" style="display:none">
+    <div id="tutText" class="btxt"></div>
+    <div id="tutArrow" class="barrow"><span class="fico" data-ico="down"></span></div>
+</div>
+<div id="tip" class="bubble" style="display:none">
+    <div id="tipText" class="btxt"></div>
+    <div id="tipArrow" class="barrow"><span class="fico" data-ico="down"></span></div>
 </div>
 <div id="toast"></div>
 

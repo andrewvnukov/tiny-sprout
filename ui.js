@@ -129,6 +129,8 @@ function initUI() {
             location.replace(u.toString());
         };
     }
+    // любое действие игрока снимает подсказку: она уже сделала своё дело
+    document.addEventListener('pointerdown', () => { if (tipNow) closeTip(); }, true);
     $('overlay').onclick   = closeAllSheets;
     for (const b of document.querySelectorAll('.close'))
         b.onclick = closeAllSheets;
@@ -165,6 +167,7 @@ function uiTick() {
     if ($('orderSheet').classList.contains('open')) renderOrders();
     if ($('shopSheet').classList.contains('open')) renderShop();
     if (S.tut < 3) posTut();
+    posTip();
 }
 
 // ---------- Панели ----------
@@ -603,6 +606,73 @@ function showShortcutModal() {
     $('shortcutGo').onclick = () => { sfx('click'); closeModal('shortcutModal'); shortcutAccept(); };
     $('shortcutNo').onclick = () => { sfx('click'); closeModal('shortcutModal'); shortcutDecline(); };
     openModal('shortcutModal');
+}
+
+// ---------- Контекстные подсказки ----------
+// Отдельно от линейного обучения: у них условные триггеры, и показать их надо
+// в том числе тем, кто обучение давно прошёл. Одна за раз, каждая один раз,
+// сама исчезает — навязываться подсказка не должна.
+const TIP_SHOW_MS = 11000;
+const TIPS = [
+    {
+        id: 'ad',
+        target: 'boostBtn',
+        text: () => T('Хочешь монет вдвое больше?<br>Посмотри короткий ролик {icon}',
+                      { icon: '<i class="ci">' + ICONS.ad + '</i>' }),
+        // после первой продажи: игрок уже понял, зачем ему монеты
+        when: () => S.tut >= 3 && S.cnt.sold > 0,
+    },
+    {
+        id: 'work',
+        target: 'shopFab',
+        text: () => T('Наними работников {icon} — ферма<br>будет приносить монеты без тебя',
+                      { icon: '<i class="ci">' + ICONS.harv + '</i>' }),
+        // показываем, когда работник уже по карману: иначе это просто дразнилка
+        when: () => S.tut >= 3 && !S.workers.harv && S.coins >= workerCost(WORKERS[0], 0),
+    },
+];
+let tipTimer = 0, tipNow = null;
+
+function hideTip() {
+    if (tipNow) { const t = $(tipNow.target); if (t) t.classList.remove('tipTarget'); }
+    tipNow = null;
+    clearTimeout(tipTimer);
+    $('tip').style.display = 'none';
+}
+// пометить показанной и убрать
+function closeTip() {
+    if (!tipNow) return;
+    S.tips[tipNow.id] = true;
+    persist(true);
+    hideTip();
+}
+function posTip() {
+    if (!tipNow) return;
+    const el = $('tip'), t = $(tipNow.target);
+    if (!t) { hideTip(); return; }
+    const r = t.getBoundingClientRect();
+    // над кнопкой, если она внизу экрана; сбоку, если у правого края
+    const side = r.left > innerWidth * 0.6;
+    el.classList.toggle('side', side);
+    const x = side ? r.left - 10 : r.left + r.width / 2;
+    const y = side ? r.top + r.height / 2 : r.top - 6;
+    // в side-режиме привязка идёт по правому краю пузыря, поэтому слева
+    // резервируем всю его ширину
+    el.style.left = Math.max(side ? 242 : 118, Math.min(innerWidth - 12, x)) + 'px';
+    el.style.top  = Math.max(40, y) + 'px';
+}
+function tipTick() {
+    if (!S || S.tut < 3 || tipNow) return;
+    if (document.querySelector('.sheet.open, .modal.open')) return;   // не под панелью
+    const tip = TIPS.find(t => !S.tips[t.id] && t.when());
+    if (!tip) return;
+    tipNow = tip;
+    $('tipText').innerHTML = tip.text();
+    const t = $(tip.target);
+    if (t) t.classList.add('tipTarget');
+    $('tip').style.display = '';
+    posTip();
+    tipTimer = setTimeout(closeTip, TIP_SHOW_MS);
 }
 
 // ---------- Туториал ----------
