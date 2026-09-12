@@ -8,7 +8,13 @@ const browser = await chromium.launch({ executablePath: process.env.PW_CHROME ||
 const page = await browser.newPage({ viewport: { width: 420, height: 800 } });
 // шум Yandex SDK вне платформы — не наша ошибка
 const sdkNoise = t => /No parent to post message|appId from environment|YandexGamesSDKEnvironment/.test(t);
-page.on('console', m => m.type() === 'error' && !sdkNoise(m.text()) && errors.push(m.text()));
+// Сам sdk.js с yandex.ru локально не грузится (тут нет платформы), favicon мы не
+// отдаём — оба приходят как «Failed to load resource» без текста про источник.
+// Отсеиваем по адресу, а не по тексту: иначе вместе с ними замолчит и настоящая
+// пропавшая картинка, ради которой смоук в основном и нужен.
+const noiseUrl = u => /yandex\.ru\/games\/sdk|favicon\.ico/.test(u || '');
+page.on('console', m => m.type() === 'error' && !sdkNoise(m.text())
+    && !noiseUrl(m.location() && m.location().url) && errors.push(m.text()));
 page.on('pageerror', e => !sdkNoise(e.message) && errors.push(e.message));
 
 const state = () => page.evaluate(() => JSON.parse(window.render_game_to_text()));

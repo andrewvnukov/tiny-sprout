@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
-const b = await chromium.launch();
+const EXE = process.env.PW_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const b = await chromium.launch({ executablePath: EXE });
 const ctx = await b.newContext({ viewport:{width:420,height:800}, hasTouch:true, isMobile:true });
 const p = await ctx.newPage();
 await p.goto('http://localhost:8347/');
