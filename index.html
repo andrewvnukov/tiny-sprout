@@ -149,6 +149,8 @@ button { font-family:inherit; color:var(--ink); }
     box-shadow:inset 0 1px 3px rgba(96,74,52,.15); }
 .capwrap i { display:block; height:100%; background:#eeb45f; border-radius:8px; }
 #barnCap { font-size:13px; margin-bottom:4px; }
+#barnOffline { margin-top:7px; font-size:12px; line-height:1.35; color:var(--ink-soft); text-align:center; }
+#barnOffline .ci { width:12px; height:12px; vertical-align:-1px; }
 
 .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
 .cell { background:var(--card); border-radius:15px; text-align:center;
@@ -168,7 +170,9 @@ button { font-family:inherit; color:var(--ink); }
     background:rgba(64,50,36,.5); opacity:0; pointer-events:none; transition:opacity .2s; z-index:40; }
 .modal.open { opacity:1; pointer-events:auto; }
 .mbox { background:var(--paper); border-radius:26px; padding:24px;
-    width:min(360px, 92vw); text-align:center; box-shadow:0 12px 40px rgba(50,38,26,.35); }
+    width:min(360px, 92vw); text-align:center; box-shadow:0 12px 40px rgba(50,38,26,.35);
+    /* страховка: содержимое модалок переменной длины не должно уезжать за экран */
+    max-height:88vh; overflow-y:auto; }
 .mbox h2 { display:flex; align-items:center; justify-content:center; gap:9px; margin-bottom:12px;
     font-family:'Neucha', 'Nunito', sans-serif; font-weight:400; font-size:26px; }
 .mbox h2 .fico { width:26px; height:26px; }
@@ -177,14 +181,23 @@ button { font-family:inherit; color:var(--ink); }
 .mbox .bbtn { margin:4px; }
 
 /* ---------- туториал ---------- */
-#tut { position:fixed; z-index:15; transform:translate(-50%, -100%); pointer-events:none; text-align:center; }
-#tut.side { transform:translate(-100%, -50%); }
-#tutText { background:var(--card); border-radius:15px; padding:9px 13px;
-    font-family:'Neucha', 'Nunito', sans-serif; font-size:16px; box-shadow:var(--shadow); }
-#tutText .ci { width:15px; height:15px; }
-#tutArrow { margin-top:2px; animation:bounce .7s infinite alternate; }
-#tutArrow .fico { width:26px; height:26px; filter:drop-shadow(0 2px 2px rgba(96,74,52,.3)); }
-#tut.side #tutArrow .fico { transform:rotate(-90deg); }
+/* ширина задана явно: без неё fixed-элемент раскладывается в остатке места
+   справа от left, и в side-режиме текст сжимается в узкую колонку —
+   transform применяется уже после расчёта ширины */
+.bubble { position:fixed; z-index:15; width:230px; transform:translate(-50%, -100%);
+    pointer-events:none; text-align:center; }
+.bubble.side { transform:translate(-100%, -50%); }
+.bubble .btxt { background:var(--card); border-radius:15px; padding:9px 13px;
+    font-family:'Neucha', 'Nunito', sans-serif; font-size:16px; line-height:1.25; box-shadow:var(--shadow); }
+.bubble .btxt .ci { width:15px; height:15px; }
+.bubble .barrow { margin-top:2px; animation:bounce .7s infinite alternate; }
+.bubble .barrow .fico { width:26px; height:26px; filter:drop-shadow(0 2px 2px rgba(96,74,52,.3)); }
+.bubble.side .barrow .fico { transform:rotate(-90deg); }
+/* подсвечиваем саму кнопку: одной стрелки мало, когда рядом другие элементы */
+.tipTarget { position:relative; z-index:16;
+    outline:3px solid var(--gold); outline-offset:2px;
+    animation:tipPulse 1.2s ease-in-out infinite; }
+@keyframes tipPulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.07); } }
 @keyframes bounce { from { transform:translateY(0); } to { transform:translateY(7px); } }
 
 /* ---------- тост ---------- */
@@ -210,6 +223,37 @@ button { font-family:inherit; color:var(--ink); }
     border-radius:50%; background:var(--green); border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
 .sndRow input[type=range]::-moz-range-thumb { width:24px; height:24px; border-radius:50%; background:var(--green);
     border:3px solid #fff; box-shadow:var(--shadow); cursor:pointer; }
+
+/* ---------- офлайн-сводка ---------- */
+/* в сводке список бывает длинным (все культуры + продукты): прокручиваем
+   только его, а заголовок и кнопки держим на виду */
+#offlineModal .mbox { display:flex; flex-direction:column; overflow:hidden; }
+#offlineList { margin:12px 0 14px; overflow-y:auto; min-height:0; }
+.offWarn { margin-top:8px; padding:9px 12px; border-radius:14px; background:#fdf3d7;
+    color:#8a6a3a; font-size:12px; line-height:1.35; }
+.offRow { display:flex; align-items:center; gap:9px; background:var(--card); border-radius:14px;
+    padding:7px 11px; margin-bottom:6px; box-shadow:0 1px 4px rgba(96,74,52,.1); }
+.offRow .ic { width:26px; height:26px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.offRow .ic svg { width:100%; height:100%; }
+.offRow b { flex:1; text-align:left; font-size:13px; }
+.offRow em { font-style:normal; font-weight:800; font-size:13.5px; color:#7d9a5c; }
+
+/* ---------- ежедневная серия ---------- */
+.streakRow { display:flex; gap:5px; justify-content:center; margin:14px 0 16px; }
+.streakDay { flex:1; max-width:44px; border-radius:12px; background:var(--cream); padding:7px 2px 6px;
+    font-size:11px; font-weight:800; color:var(--ink-soft); }
+.streakDay b { display:block; font-size:12.5px; color:var(--ink); }
+.streakDay .ci { width:13px; height:13px; }
+.streakDay.done { background:#eef4dd; color:#7d9a5c; }
+/* сегодняшний день — зелёным: на золотом фоне золотое семя не читалось */
+.streakDay.now  { background:var(--green); color:#fff; box-shadow:0 2px 0 var(--green-edge); }
+.streakDay.now b { color:#fff; }
+
+/* ---------- выбор языка ---------- */
+.langSel { flex:1; display:flex; gap:6px; }
+.langBtn { flex:1; padding:8px 4px; border:none; border-radius:12px; background:var(--cream);
+    color:var(--ink-soft); font-family:inherit; font-weight:800; font-size:13px; cursor:pointer; }
+.langBtn.on { background:var(--green); color:#fff; box-shadow:0 2px 0 var(--green-edge); }
 
 /* ---------- строки лидерборда ---------- */
 .lbRank { flex:0 0 30px; text-align:center; font-weight:800; font-size:15px; color:var(--ink-soft); }
@@ -257,47 +301,48 @@ button { font-family:inherit; color:var(--ink); }
 <div class="overlay ui" id="overlay"></div>
 
 <div class="sheet ui" id="cropSheet">
-    <h2><span class="fico" data-ico="wheat"></span>Что сажать?</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="wheat"></span><span data-t="Что сажать?">Что сажать?</span></h2><button class="close">✕</button>
     <div class="list"><div class="grid" id="cropPickList"></div>
-    <div class="hint">Тап по грядке сажает выбранную культуру</div></div>
+    <div class="hint" data-t="Тап по грядке сажает выбранную культуру">Тап по грядке сажает выбранную культуру</div></div>
 </div>
 
 <div class="sheet ui" id="shopSheet">
-    <h2><span class="fico" data-ico="shop"></span>Магазин</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="shop"></span><span data-t="Магазин">Магазин</span></h2><button class="close">✕</button>
     <div class="tabs">
-        <button class="tab on" data-tab="seeds">Семена</button>
-        <button class="tab" data-tab="ups">Улучшения</button>
-        <button class="tab" data-tab="work">Техника</button>
-        <button class="tab" data-tab="anim">Животные</button>
+        <button class="tab on" data-tab="seeds" data-t="Семена">Семена</button>
+        <button class="tab" data-tab="ups" data-t="Улучшения">Улучшения</button>
+        <button class="tab" data-tab="work" data-t="Техника">Техника</button>
+        <button class="tab" data-tab="anim" data-t="Животные">Животные</button>
     </div>
     <div class="list" id="shopList"></div>
 </div>
 
 <div class="sheet ui" id="barnSheet">
-    <h2><span class="fico" data-ico="barn"></span>Склад</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="barn"></span><span data-t="Склад">Склад</span></h2><button class="close">✕</button>
     <div class="capbar">
-        <div id="barnCap">Склад: 0 / 60</div>
+        <div id="barnCap" data-t="Склад: 0 / 60">Склад: 0 / 60</div>
         <div class="capwrap"><i id="barnBar" style="width:0%"></i></div>
+        <div id="barnOffline"></div>
     </div>
     <div class="list" id="barnList"></div>
-    <div style="padding:0 16px 16px"><button class="bbtn" id="sellAllBtn" style="width:100%; justify-content:center"><span class="ci" data-ico="sell"></span>Продать всё</button></div>
+    <div style="padding:0 16px 16px"><button class="bbtn" id="sellAllBtn" style="width:100%; justify-content:center"><span class="ci" data-ico="sell"></span><span data-t="Продать всё">Продать всё</span></button></div>
 </div>
 
 <div class="sheet ui" id="orderSheet">
-    <h2><span class="fico" data-ico="orders"></span>Заказы</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="orders"></span><span data-t="Заказы">Заказы</span></h2><button class="close">✕</button>
     <div class="tabs">
-        <button class="tab on" data-tab="orders">Заказы</button>
-        <button class="tab" data-tab="quests">Квесты дня</button>
+        <button class="tab on" data-tab="orders" data-t="Заказы">Заказы</button>
+        <button class="tab" data-tab="quests" data-t="Квесты дня">Квесты дня</button>
     </div>
     <div class="list" id="orderList"></div>
 </div>
 
 <div class="sheet ui" id="albumSheet">
-    <h2><span class="fico" data-ico="album"></span>Альбом</h2><button class="close">✕</button>
+    <h2><span class="fico" data-ico="album"></span><span data-t="Альбом">Альбом</span></h2><button class="close">✕</button>
     <div class="tabs">
-        <button class="tab on" data-tab="coll">Коллекция</button>
-        <button class="tab" data-tab="ach">Достижения</button>
-        <button class="tab" data-tab="rank">Рейтинг</button>
+        <button class="tab on" data-tab="coll" data-t="Коллекция">Коллекция</button>
+        <button class="tab" data-tab="ach" data-t="Достижения">Достижения</button>
+        <button class="tab" data-tab="rank" data-t="Рейтинг">Рейтинг</button>
     </div>
     <div class="list" id="albumList"></div>
 </div>
@@ -305,41 +350,73 @@ button { font-family:inherit; color:var(--ink); }
 <!-- Модалки -->
 <div class="modal ui" id="soundModal">
     <div class="mbox">
-        <h2><span class="fico" data-ico="settings"></span>Звук</h2>
-        <div class="sndRow"><span>Эффекты</span><input type="range" id="sfxSlider" min="0" max="100" step="1" value="50"></div>
-        <div class="sndRow"><span>Музыка</span><input type="range" id="musSlider" min="0" max="100" step="1" value="50"></div>
-        <button class="bbtn close2">Готово</button>
+        <h2><span class="fico" data-ico="settings"></span><span data-t="Звук">Звук</span></h2>
+        <div class="sndRow"><span data-t="Эффекты">Эффекты</span><input type="range" id="sfxSlider" min="0" max="100" step="1" value="50"></div>
+        <div class="sndRow"><span data-t="Музыка">Музыка</span><input type="range" id="musSlider" min="0" max="100" step="1" value="50"></div>
+        <div class="sndRow"><span data-t="Язык">Язык</span>
+            <div class="langSel">
+                <button class="langBtn" data-lang="ru">RU</button>
+                <button class="langBtn" data-lang="en">EN</button>
+            </div>
+        </div>
+        <button class="bbtn close2" data-t="Готово">Готово</button>
     </div>
 </div>
 
 <div class="modal ui" id="prestigeModal">
     <div class="mbox">
-        <h2><span class="fico" data-ico="star"></span>Новый сезон</h2>
+        <h2><span class="fico" data-ico="star"></span><span data-t="Новый сезон">Новый сезон</span></h2>
         <div id="prestigeInfo"></div>
-        <button class="bbtn" id="prestigeGo">Новый сезон</button>
-        <button class="bbtn close2">Позже</button>
+        <button class="bbtn" id="prestigeGo" data-t="Новый сезон">Новый сезон</button>
+        <button class="bbtn close2" data-t="Позже">Позже</button>
     </div>
 </div>
 
 <div class="modal ui" id="offlineModal">
     <div class="mbox">
-        <h2><span class="fico" data-ico="moon"></span>С возвращением!</h2>
+        <h2><span class="fico" data-ico="moon"></span><span data-t="С возвращением!">С возвращением!</span></h2>
         <p id="offlineInfo"></p>
-        <button class="bbtn" id="offlineX2"><span class="ci" data-ico="ad"></span>Забрать x2</button>
-        <button class="bbtn" id="offlineTake">Забрать</button>
+        <div id="offlineList"></div>
+        <button class="bbtn" id="offlineX2" data-t="Забрать x2"><span class="ci" data-ico="ad"></span>Забрать x2</button>
+        <button class="bbtn" id="offlineTake" data-t="Забрать">Забрать</button>
+    </div>
+</div>
+
+<div class="modal ui" id="streakModal">
+    <div class="mbox">
+        <h2><span class="fico" data-ico="chest"></span><span data-t="Ты вернулся!">Ты вернулся!</span></h2>
+        <p id="streakInfo"></p>
+        <div class="streakRow" id="streakRow"></div>
+        <button class="bbtn" id="streakX2"></button>
+        <button class="bbtn" id="streakGo"></button>
+    </div>
+</div>
+
+<div class="modal ui" id="shortcutModal">
+    <div class="mbox">
+        <h2><span class="fico" data-ico="seed"></span><span data-t="Ферма под рукой">Ферма под рукой</span></h2>
+        <p data-t="Добавь ярлык на главный экран — и возвращайся к ферме в одно касание.">Добавь ярлык на главный экран — и возвращайся к ферме в одно касание.</p>
+        <p id="shortcutBonus"></p>
+        <button class="bbtn" id="shortcutGo" data-t="Добавить">Добавить</button>
+        <button class="bbtn" id="shortcutNo" data-t="Позже">Позже</button>
     </div>
 </div>
 
 <!-- Туториал и тост -->
-<div id="tut" style="display:none">
-    <div id="tutText"></div>
-    <div id="tutArrow"><span class="fico" data-ico="down"></span></div>
+<div id="tut" class="bubble" style="display:none">
+    <div id="tutText" class="btxt"></div>
+    <div id="tutArrow" class="barrow"><span class="fico" data-ico="down"></span></div>
+</div>
+<div id="tip" class="bubble" style="display:none">
+    <div id="tipText" class="btxt"></div>
+    <div id="tipArrow" class="barrow"><span class="fico" data-ico="down"></span></div>
 </div>
 <div id="toast"></div>
 
 <!-- Yandex Games SDK (вне платформы не загрузится — игра уйдёт в localStorage) -->
 <script src="https://yandex.ru/games/sdk/v2" onerror="window.__noSdk=1"></script>
 <script src="littlejs.release.js"></script>
+<script src="i18n.js"></script>
 <script src="data.js"></script>
 <script src="sfx.js"></script>
 <script src="render.js"></script>

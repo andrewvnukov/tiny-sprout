@@ -7,7 +7,12 @@
 let S = null;
 let ysdk = null;
 const LB_NAME = 'goldenSeeds';         // техническое имя лидерборда в консоли Яндекс Игр
-let lbBoard = null, _lbLast = -1;
+let lbBoard = null;                    // нормализованный API: { setScore, getEntries }
+let lbPlayer = null;                   // объект игрока (нужен для isAuthorized)
+let lbAuthed = false;                  // авторизован ли игрок: без этого запись и своё место недоступны
+let lbCanWrite = false;                // доступен ли leaderboards.setScore на этой платформе
+let _lbLast = -1, _lbWroteAt = 0, _lbTimer = 0;
+let _lbCache = null, _lbCacheAt = 0;
 let earnAcc = 0, ipsTimer = 0;
 let harvT = 0, sowT = 0, sellT = 0;   // таймеры работников (не сохраняются)
 let saveT = 0;
@@ -32,16 +37,22 @@ function freshState() {
         animT: { hen:0, cow:0, sheep:0 },
         orders: [],
         ordTok: ORDER_SLOTS, ordTokT: Date.now(),  // «ведро» появления заказов
-        ordSkipT: 0, ordSkipN: 0,                   // окно/счётчик смен заданий
         quests: [], qday: '', chestClaimed: false,
         ach: {},
         cnt: { harvests:0, sold:0, planted:0, orders:0, taps:0, aprods:0, goldens:0, prestiges:0,
                cropsAll:0, plotsAll:0, animAll:0 },
         boostUntil: 0, adGrowAt: 0,
+        scAsked: false, scDone: false,   // предлагали / добавили ярлык на экран
+        streak: 0, streakDay: '',        // серия заходов и дата последнего получения
+        tips: {},                        // показанные контекстные подсказки
+        reviewAsked: false,              // просили оценить игру
         sfxVol: .5, musVol: .5,     // громкость эффектов и музыки (0..1, 0.5 = базовая)
         time: Date.now(),
     };
 }
+
+// допустимые имена счётчиков — по ним проверяем квесты из чужого сейва
+const S_CNT_KEYS = freshState().cnt;
 
 const boostOn = () => S.boostUntil > Date.now();
 const storeTotal = () => Object.values(S.store).reduce((a,b)=>a+b, 0);
@@ -49,68 +60,231 @@ const todayStr = () => new Date().toISOString().slice(0,10);
 
 // ---------- Сейвы ----------
 const SAVE_KEY = 'tinysprout';
-function persist(force) {
+// flush=false (значение по умолчанию у SDK) — запись копится и уходит пачкой,
+// это бережёт лимит облачных сохранений (100 запросов за 5 минут). Минус в том,
+// что накопленное может не успеть уйти, если игрок закрывает вкладку, — поэтому
+// при уходе со страницы дожимаем немедленно, см. flushSave().
+function persist(force, flush) {
     if (!booted) return;
+    // Досчёт офлайна прогоняет тысячи шагов симуляции, и каждый сбор урожая
+    // звал бы сохранение: за одно возвращение это ~2900 записей в облако при
+    // лимите платформы 100 запросов за 5 минут. Копим молча, а состояние
+    // сохраняем один раз после досчёта.
+    if (ffBusy) return;
     if (!force && saveT > 0) return;
     saveT = 10;
     S.time = Date.now();
     const raw = JSON.stringify(S);
     try { localStorage.setItem(SAVE_KEY, raw); } catch(e) {}
     if (ysdk) {
-        try { ysdk.getPlayer().then(p => p.setData({ save: raw })).catch(()=>{}); } catch(e) {}
+        try { ysdk.getPlayer().then(p => p.setData({ save: raw }, !!flush)).catch(()=>{}); } catch(e) {}
     }
     submitScore();   // обновить очки в лидерборде, если изменились
 }
+// Немедленная отправка в облако при сворачивании/закрытии. Ограничена по
+// частоте: переключение вкладок туда-сюда не должно жечь лимит запросов.
+let _flushedAt = 0;
+function flushSave() {
+    if (!booted || !ysdk) return;
+    if (Date.now() - _flushedAt < 3000) return;
+    _flushedAt = Date.now();
+    persist(true, true);
+}
+// Числовое поле сейва: всё, что не конечное число, заменяем значением по
+// умолчанию. Сейв приходит из облака и с чужого устройства, доверять нечему.
+const sNum = (v, def, min, max) => {
+    const n = typeof v === 'number' && isFinite(v) ? v : def;
+    return Math.max(min === undefined ? -Infinity : min,
+                    Math.min(max === undefined ? Infinity : max, n));
+};
+const sArr = (v, def) => Array.isArray(v) ? v : def;
 function restore(raw) {
+    if (!raw) return freshState();
+    // Слияние идёт в отдельный объект: при поломке возвращаем чистое
+    // состояние, а не то, что успели испортить. Иначе один битый сейв
+    // навсегда заклинивал запуск — и переиграть его игрок уже не мог.
     const f = freshState();
-    if (!raw) return f;
     try {
         const d = JSON.parse(raw);
+        if (!d || typeof d !== 'object') return f;
         // осторожное слияние: недостающие поля берём из свежего состояния
         for (const k in f)
             if (d[k] !== undefined) f[k] = d[k];
-        for (const k in f.up)      if (typeof f.up[k] !== 'number') f.up[k] = 0;
-        for (const k in f.workers) if (typeof f.workers[k] !== 'number') f.workers[k] = 0;
+        for (const k in freshState().up)      f.up[k]      = sNum(f.up      && f.up[k], 0, 0);
+        for (const k in freshState().workers) f.workers[k] = sNum(f.workers && f.workers[k], 0, 0);
         // миграция: трактор заменён продавцом — переносим уровни
-        if (typeof f.workers.seller !== 'number') f.workers.seller = (typeof f.workers.tract === 'number' ? f.workers.tract : 0);
+        if (d.workers && typeof d.workers.tract === 'number' && !f.workers.seller)
+            f.workers.seller = d.workers.tract;
         delete f.workers.tract;
-        for (const k in f.animals) if (typeof f.animals[k] !== 'number') f.animals[k] = 0;
-        const c = freshState().cnt;
-        f.cnt = Object.assign(c, f.cnt);
+        for (const k in freshState().animals) {
+            const a = ANIMALS.find(x => x.id === k);
+            f.animals[k] = sNum(f.animals && f.animals[k], 0, 0, a ? a.max : 0);
+            f.animT[k]   = sNum(f.animT   && f.animT[k],   0, 0);
+        }
+        if (!f.tips || typeof f.tips !== 'object') f.tips = {};
+        if (!f.ach  || typeof f.ach  !== 'object') f.ach  = {};
+        f.cnt = Object.assign(freshState().cnt, f.cnt);
+        for (const k in f.cnt) f.cnt[k] = sNum(f.cnt[k], 0, 0);
+        f.coins = sNum(f.coins, 0, 0);
+        f.seeds = sNum(f.seeds, 0, 0);
+        f.lifeEarned = sNum(f.lifeEarned, 0, 0);
+        f.seasonEarned = sNum(f.seasonEarned, 0, 0);
+        f.ips = sNum(f.ips, 0, 0);
+        f.bestIps = sNum(f.bestIps, 0, 0);
+        f.tut = sNum(f.tut, 0, 0, 3);
+        f.zones = sNum(f.zones, 1, 1, ZONES.length);
+        f.time = sNum(f.time, Date.now());
         // миграция на суммарную модель престижа: у старых сейвов нет claimedSeeds —
         // выставляем «уже выдано» по текущему lifeEarned, чтобы не подарить пачку семян
-        if (typeof d.claimedSeeds !== 'number') f.claimedSeeds = seedsFromEarned(f.lifeEarned);
+        f.claimedSeeds = typeof d.claimedSeeds === 'number'
+            ? sNum(d.claimedSeeds, 0, 0) : seedsFromEarned(f.lifeEarned);
+        // Индексы культур: сейв мог прийти из версии, где культур больше.
+        // Без проверки CROPS[i] был бы undefined и игра падала бы при запуске.
+        f.crops = sArr(f.crops, []).slice(0, CROPS.length).map(x => !!x);
+        f.disc  = sArr(f.disc,  []).slice(0, CROPS.length).map(x => !!x);
         while (f.crops.length < CROPS.length) f.crops.push(false);
-        while (f.disc.length < CROPS.length) f.disc.push(false);
+        while (f.disc.length  < CROPS.length) f.disc.push(false);
+        f.crops[0] = f.disc[0] = true;               // стартовая культура всегда открыта
+        // Индекс вне таблицы не подрезаем к последней культуре: это подарило бы
+        // игроку самый дорогой ананас. Считаем такую грядку пустой.
+        const cropAt = v => {
+            const i = Math.round(sNum(v, -1));
+            return CROPS[i] ? i : -1;
+        };
+        f.lastCrop = f.crops[cropAt(f.lastCrop)] ? cropAt(f.lastCrop) : 0;
+        f.plots = sArr(f.plots, []).slice(0, MAXPLOTS).map(p => {
+            const empty = { c:-1, t:0, g:false };
+            if (!p || typeof p !== 'object') return empty;
+            const c = cropAt(p.c);
+            return c < 0 ? empty : { c, t: sNum(p.t, 0, 0), g: !!p.g };
+        });
         if (!f.plots.length) f.plots = [{ c:-1, t:0, g:false }];
+        // на складе могли остаться товары, которых в игре больше нет
+        const known = {};
+        for (const c of CROPS) known[c.id] = 1;
+        for (const a of APRODS) known[a.id] = 1;
+        const st = {};
+        if (f.store && typeof f.store === 'object')
+            for (const id in f.store) { const n = sNum(f.store[id], 0, 0) | 0; if (known[id] && n > 0) st[id] = n; }
+        f.store = st;
+        // заказы и квесты: чужие индексы и счётчики просто выбрасываем
+        f.orders = sArr(f.orders, []).slice(0, ORDER_SLOTS)
+            .map(o => (o && CROPS[o.crop] && o.qty > 0) ? o : null);
+        f.quests = sArr(f.quests, []).filter(q => q && (q.cnt in S_CNT_KEYS) && typeof q.n === 'number');
+        if (f.quests.length !== 3) { f.quests = []; f.qday = ''; }
         return f;
-    } catch(e) { return f; }
+    } catch(e) { return freshState(); }
 }
 
 // ---------- Лидерборд (Яндекс Игры): сумма золотых семян ----------
-function initLeaderboard() {
-    if (!ysdk) return;
+// Лимиты платформы: запись — не чаще 1 раза в секунду, чтение — 20 запросов
+// за 5 минут. Поэтому запись троттлится, а выдача кэшируется.
+const LB_WRITE_MS = 1200;      // минимальный интервал между setScore
+const LB_CACHE_MS = 30000;     // сколько живёт кэш выдачи
+const LB_TOP = 15;             // 1..20 по документации
+const LB_AROUND = 5;           // 1..10 по документации
+
+// Приводим оба поколения API к одному виду: актуальное — ysdk.leaderboards
+// (setScore/getEntries), устаревшее — ysdk.getLeaderboards()
+// (setLeaderboardScore/getLeaderboardEntries).
+function lbApi(sdk) {
     try {
-        const g = ysdk.getLeaderboards ? ysdk.getLeaderboards() : ysdk.leaderboards;
-        Promise.resolve(g).then(lb => { lbBoard = lb; submitScore(true); }).catch(() => {});
+        if (sdk.leaderboards && sdk.leaderboards.setScore)
+            return Promise.resolve(sdk.leaderboards);
+        if (typeof sdk.getLeaderboards === 'function')
+            return Promise.resolve(sdk.getLeaderboards()).then(o => o && {
+                setScore:   (n, s, e) => o.setLeaderboardScore(n, s, e),
+                getEntries: (n, opt)  => o.getLeaderboardEntries(n, opt),
+            });
     } catch(e) {}
+    return Promise.resolve(null);
+}
+// isAvailableMethod возвращает Promise<Boolean>; на старых сборках его может не быть
+function lbAvailable(name) {
+    try {
+        if (typeof ysdk.isAvailableMethod !== 'function') return Promise.resolve(true);
+        return Promise.resolve(ysdk.isAvailableMethod(name)).catch(() => false);
+    } catch(e) { return Promise.resolve(false); }
+}
+function lbCheckAuth() {
+    try {
+        return ysdk.getPlayer().then(p => {
+            lbPlayer = p;
+            // getMode() устарел, но остаётся запасным вариантом
+            if (typeof p.isAuthorized === 'function') return !!p.isAuthorized();
+            if (typeof p.getMode === 'function') return p.getMode() !== 'lite';
+            return true;
+        }).catch(() => false);
+    } catch(e) { return Promise.resolve(false); }
+}
+function initLeaderboard() {
+    if (!ysdk) return Promise.resolve(false);
+    return Promise.all([lbApi(ysdk), lbAvailable('leaderboards.setScore'), lbCheckAuth()])
+        .then(([api, canWrite, authed]) => {
+            lbBoard = api || null;
+            lbCanWrite = !!canWrite;
+            lbAuthed = !!authed;
+            if (lbBoard && lbAuthed && lbCanWrite) submitScore(true);
+            return !!lbBoard;
+        })
+        .catch(() => false);
+}
+// Показываем окно авторизации: неавторизованный игрок не может ни писать
+// результат, ни видеть своё место в выдаче.
+function lbLogin(cb) {
+    cb = cb || (() => {});
+    if (!ysdk || !ysdk.auth || typeof ysdk.auth.openAuthDialog !== 'function') { cb(false); return; }
+    ysdk.auth.openAuthDialog()
+        .then(() => lbCheckAuth())
+        .then(a => {
+            lbAuthed = !!a;
+            _lbCache = null;                 // выдача теперь другая — со своим местом
+            if (lbAuthed) submitScore(true);
+            cb(lbAuthed);
+        })
+        .catch(() => cb(false));             // игрок закрыл окно — это не ошибка
 }
 function submitScore(force) {
-    if (!lbBoard || !S) return;
-    const sc = S.seeds | 0;
+    if (!lbBoard || !S || !lbAuthed || !lbCanWrite) return;
+    const sc = Math.max(0, S.seeds | 0);     // счёт должен быть неотрицательным
+    // с нулём в таблице делать нечего: семена только копятся, поэтому 0 бывает
+    // лишь до первого семени — иначе рейтинг забился бы пустыми записями
+    if (sc <= 0) return;
     if (!force && sc === _lbLast) return;
+    const wait = LB_WRITE_MS - (Date.now() - _lbWroteAt);
+    if (wait > 0) {                          // упёрлись в лимит — отправим чуть позже
+        clearTimeout(_lbTimer);
+        _lbTimer = setTimeout(() => submitScore(true), wait + 50);
+        return;
+    }
     _lbLast = sc;
-    try { const r = lbBoard.setLeaderboardScore(LB_NAME, sc); r && r.catch && r.catch(() => {}); } catch(e) {}
-}
-function fetchLeaderboard(cb) {
-    if (!lbBoard) { cb(null); return; }
+    _lbWroteAt = Date.now();
     try {
-        lbBoard.getLeaderboardEntries(LB_NAME, { includeUser: true, quantityAround: 6, quantityTop: 12 })
-            .then(res => cb(res)).catch(() => cb(null));
-    } catch(e) { cb(null); }
+        const r = lbBoard.setScore(LB_NAME, sc);
+        if (r && r.catch) r.catch(() => { _lbLast = -1; });   // дадим повторить позже
+    } catch(e) { _lbLast = -1; }
+}
+// cb получает { entries, userRank } либо { error } — UI различает причины,
+// чтобы не показывать «пусто» там, где на самом деле нужна авторизация.
+function fetchLeaderboard(cb, fresh) {
+    if (!lbBoard) { cb({ error: 'unavailable' }); return; }
+    if (!fresh && _lbCache && Date.now() - _lbCacheAt < LB_CACHE_MS) { cb(_lbCache); return; }
+    try {
+        // includeUser только для авторизованных: иначе запрос отвергается
+        lbBoard.getEntries(LB_NAME, {
+            includeUser: lbAuthed, quantityAround: LB_AROUND, quantityTop: LB_TOP,
+        }).then(res => {
+            _lbCache = res; _lbCacheAt = Date.now();
+            cb(res);
+        }).catch(() => cb({ error: 'fail' }));
+    } catch(e) { cb({ error: 'fail' }); }
 }
 
 // ---------- Экономика ----------
+// Награды (серия, квесты, сундук) начисляем отдельно от earn(): они не идут
+// в lifeEarned и не влияют на ips, иначе престиж и прогноз офлайна раздувались
+// бы подарками, а не реальным фермерством.
+function grant(a) { S.coins += a; }
 function earn(a) {
     S.coins += a;
     S.seasonEarned += a;
@@ -118,7 +292,7 @@ function earn(a) {
     earnAcc += a;
 }
 function spend(a) {
-    if (S.coins < a) { sfx('error'); toast('Не хватает монет!'); return false; }
+    if (S.coins < a) { sfx('error'); toast(T('Не хватает монет!')); return false; }
     S.coins -= a;
     return true;
 }
@@ -127,7 +301,7 @@ function spend(a) {
 function plantPlot(i, ci, silent) {
     const c = CROPS[ci];
     if (!S.crops[ci] || S.plots[i].c >= 0) return false;
-    if (S.coins < c.seed) { if (!silent) { sfx('error'); toast('Семена стоят ' + fmt(c.seed) + ' монет'); } return false; }
+    if (S.coins < c.seed) { if (!silent) { sfx('error'); toast(T('Семена стоят {n} монет', { n: fmt(c.seed) })); } return false; }
     S.coins -= c.seed;
     S.plots[i] = { c: ci, t: 0, g: Math.random() < goldChance() };
     S.cnt.planted++;
@@ -142,12 +316,14 @@ function harvestPlot(i, silent) {
     const c = CROPS[p.c];
     if (p.t < cropGrow(c)) return false;
     const qty = p.g ? 5 : 1;
-    if (storeTotal() + qty > whCap()) { if (!silent) { sfx('error'); toast('Склад полон! Продай урожай.'); } return false; }
+    if (storeTotal() + qty > whCap()) { if (!silent) { sfx('error'); toast(T('Склад полон! Продай урожай.')); } return false; }
     S.store[c.id] = (S.store[c.id]||0) + qty;
     S.cnt.harvests++;
     if (p.g) { S.cnt.goldens++; if (!silent) sfx('golden'); }
     else if (!silent) sfx('harvest');
-    fxHarvest(i, p.c, p.g);
+    // Частицы живут до отрисовки и никем не ограничены: за 12 часов офлайна
+    // сюда прилетало 180 тысяч штук, и все они высыпались в первый же кадр.
+    if (!ffBusy) fxHarvest(i, p.c, p.g);
     S.plots[i] = { c:-1, t:0, g:false };
     if (S.tut === 1) { S.tut = 2; renderTut(); }
     persist();
@@ -171,7 +347,7 @@ function buyPlot() {
     if (!spend(cost)) return;
     S.plots.push({ c:-1, t:0, g:false });
     sfx('buy');
-    toast('Новая грядка!');
+    toast(T('Новая грядка!'));
     if (S.plots.length >= MAXPLOTS) S.cnt.plotsAll = 1;
     persist(true);
 }
@@ -181,7 +357,7 @@ function buyZone() {
     if (!spend(z.unlock)) return;
     S.zones++;
     sfx('chest');
-    toast(z.name + ' — открыто!');
+    toast(T('{name} — открыто!', { name: T(z.name) }));
     persist(true);
 }
 
@@ -189,14 +365,14 @@ function buyZone() {
 function buyCrop(i) {
     const c = CROPS[i];
     if (S.crops[i]) { S.lastCrop = i; renderShop(); renderHud(); sfx('click'); return; }
-    if (c.zone >= S.zones) { sfx('error'); toast('Сначала открой зону «' + ZONES[c.zone].name + '»'); return; }
+    if (c.zone >= S.zones) { sfx('error'); toast(T('Сначала открой зону «{zone}»', { zone: T(ZONES[c.zone].name) })); return; }
     if (!spend(c.unlock)) return;
     S.crops[i] = true;
     S.disc[i] = true;
     S.lastCrop = i;
     if (S.crops.every(x=>x)) S.cnt.cropsAll = 1;
     sfx('buy');
-    toast(c.name + ' — открыто!');
+    toast(T('{name} — открыто!', { name: T(c.name) }));
     albumFlash(i);
     persist(true);
     renderShop(); renderHud();
@@ -215,7 +391,8 @@ function buyWorker(id) {
     if (!spend(workerCost(w, S.workers[id]))) return;
     S.workers[id]++;
     sfx('buy');
-    toast(S.workers[id] === 1 ? w.name + ' приступает к работе!' : w.name + ' — уровень ' + S.workers[id]);
+    toast(S.workers[id] === 1 ? T('{name} приступает к работе!', { name: T(w.name) })
+                             : T('{name} — уровень {lvl}', { name: T(w.name), lvl: S.workers[id] }));
     persist(true);
     renderShop(); renderHud();
 }
@@ -226,7 +403,7 @@ function buyAnimal(id) {
     S.animals[id]++;
     if (ANIMALS.every(x => S.animals[x.id] > 0)) S.cnt.animAll = 1;
     sfx('animal');
-    toast(a.name + ' поселилась на ферме!');
+    toast(T('{name} поселилась на ферме!', { name: T(a.name) }));
     persist(true);
     renderShop(); renderHud();
 }
@@ -248,7 +425,7 @@ function sellStore(id, n) {
     earn(got);
     S.cnt.sold += n;
     sfx('sell');
-    toast('+' + fmt(got) + ' монет');
+    toast(T('+{n} монет', { n: fmt(got) }));
     if (S.tut === 2) { S.tut = 3; renderTut(); }
     persist();
     renderBarn(); renderHud();
@@ -261,7 +438,7 @@ function sellAll() {
     earn(got);
     S.cnt.sold += n;
     sfx('sell');
-    toast('+' + fmt(got) + ' монет');
+    toast(T('+{n} монет', { n: fmt(got) }));
     if (S.tut === 2) { S.tut = 3; renderTut(); }
     persist();
     renderBarn(); renderHud();
@@ -284,38 +461,51 @@ function ensureOrders() {
     for (let k = 0; k < ORDER_SLOTS; k++)
         if (!S.orders[k] && S.ordTok >= 1) { S.orders[k] = rollOrder(); S.ordTok -= 1; }
 }
-function skipsLeft() {
-    if (!S.ordSkipT || Date.now() - S.ordSkipT >= SKIP_WINDOW_MS) return SKIP_MAX;
-    return Math.max(0, SKIP_MAX - (S.ordSkipN || 0));
+// Смена задания и квеста — без лимита, каждая за добровольный ролик.
+function adSkipOrder(k) {
+    if (!S.orders[k]) return;
+    showRewarded(() => {
+        if (!S.orders[k]) return;
+        S.orders[k] = rollOrder();     // «ведро» появления заказов не тратим
+        sfx('click');
+        persist(true);
+        renderOrders();
+    });
+}
+// Квест дня меняем на другой из пула, которого сейчас нет в списке.
+function adRerollQuest(k) {
+    const q = S.quests[k];
+    if (!q || q.claimed) return;
+    showRewarded(() => {
+        const cur = S.quests.map(x => x.id);
+        const free = QPOOL.filter(x => cur.indexOf(x.id) < 0);
+        const pick = free.length ? free[Math.floor(Math.random() * free.length)] : null;
+        if (!pick) { toast(T('Другие квесты закончились')); return; }
+        const tier = questTier();
+        S.quests[k] = { id:pick.id, cnt:pick.cnt, name:pick.name, n:pick.n[tier],
+                        start:S.cnt[pick.cnt], claimed:false, reward:questReward(tier) };
+        sfx('click');
+        persist(true);
+        renderOrders();
+    });
 }
 function fulfillOrder(k) {
     const o = S.orders[k];
     if (!o) return;
     const c = CROPS[o.crop];
-    if ((S.store[c.id]||0) < o.qty) { sfx('error'); toast('Не хватает: ' + c.name + ' x' + o.qty); return; }
+    if ((S.store[c.id]||0) < o.qty) { sfx('error'); toast(T('Не хватает: {name} x{qty}', { name: T(c.name), qty: o.qty })); return; }
     S.store[c.id] -= o.qty;
     if (!S.store[c.id]) delete S.store[c.id];
     earn(o.reward);
-    if (o.seed) { S.seeds += o.seed; toast('+1 золотое семя!'); }
+    if (o.seed) { S.seeds += o.seed; toast(T('+1 золотое семя!')); }
     S.cnt.orders++;
     S.cnt.sold += o.qty;
     S.orders[k] = null;            // слот освобождён; новый придёт по «ведру» появления
     ensureOrders();
     sfx('order');
-    toast('Заказ выполнен! +' + fmt(o.reward) + ' монет');
+    toast(T('Заказ выполнен! +{n} монет', { n: fmt(o.reward) }));
     persist(true);
     renderOrders(); renderHud();
-}
-function skipOrder(k) {
-    if (!S.orders[k]) return;
-    const now = Date.now();
-    if (!S.ordSkipT || now - S.ordSkipT >= SKIP_WINDOW_MS) { S.ordSkipT = now; S.ordSkipN = 0; }
-    if (S.ordSkipN >= SKIP_MAX) { sfx('error'); toast('Смена заданий: лимит ' + SKIP_MAX + ' за 2 часа'); return; }
-    S.ordSkipN++;
-    S.orders[k] = rollOrder();     // смена в том же слоте — «ведро» появления не тратим
-    sfx('click');
-    persist(true);
-    renderOrders();
 }
 
 // ---------- Квесты дня ----------
@@ -334,27 +524,47 @@ function ensureQuests() {
     }
     persist(true);
 }
-function qProg(q) { return Math.min(q.n, S.cnt[q.cnt] - q.start); }
+function qProg(q) { return Math.max(0, Math.min(q.n, S.cnt[q.cnt] - q.start)); }
+// Офлайн-работа не засчитывается в квесты дня. Иначе за ночь работники
+// выполняли их сами: игрок заходил на готовые галочки, и ежедневный цикл
+// (а вместе с ним и повод открыть сундук) терял смысл. cnt0 — счётчики до
+// досчёта; сдвигаем базу так, чтобы прогресс, набранный вживую, сохранился,
+// а офлайн-прирост в зачёт не пошёл.
+function rebaseQuests(cnt0) {
+    for (const q of S.quests) {
+        if (q.claimed) continue;
+        // квест мог родиться уже во время досчёта (смена суток) — тогда
+        // разность отрицательная и живого прогресса просто нет
+        const live = Math.max(0, (cnt0[q.cnt] || 0) - q.start);
+        q.start = S.cnt[q.cnt] - live;
+    }
+}
 function claimQuest(k) {
     const q = S.quests[k];
     if (q.claimed || qProg(q) < q.n) return;
     q.claimed = true;
-    earn(q.reward);
+    grant(q.reward);
     sfx('quest');
-    toast('Квест выполнен! +' + fmt(q.reward) + ' монет');
+    toast(T('Квест выполнен! +{n} монет', { n: fmt(q.reward) }));
     persist(true);
     renderOrders(); renderHud();
 }
-function claimChest() {
+function claimChest(mult) {
     if (S.chestClaimed || !S.quests.every(q=>q.claimed)) return;
+    mult = mult || 1;
     S.chestClaimed = true;
     const r = chestReward();
-    earn(r.coins);
-    S.seeds += r.seed;
+    grant(r.coins * mult);
+    S.seeds += r.seed * mult;
     sfx('chest');
-    toast('Сундук: +' + fmt(r.coins) + ' монет и +1 золотое семя!');
+    toast(T('Сундук: +{n} монет и +{s} золотых семян!', { n: fmt(r.coins * mult), s: r.seed * mult }));
     persist(true);
     renderOrders(); renderHud();
+}
+// добровольный ролик за удвоенный сундук
+function adChest() {
+    if (S.chestClaimed || !S.quests.every(q=>q.claimed)) return;
+    showRewarded(() => claimChest(2));
 }
 
 // ---------- Достижения ----------
@@ -364,8 +574,11 @@ function checkAch() {
         if (S.cnt[a.cnt] >= a.n) {
             S.ach[a.id] = true;
             S.seeds += a.seed;
+            // За офлайн может закрыться сразу несколько достижений: семена
+            // начисляем, но не устраиваем очередь из тостов поверх сводки
+            if (ffBusy) continue;
             sfx('chest');
-            toast('Достижение «' + a.name + '»: +' + a.seed + ' зол. сем.');
+            toast(T('Достижение «{name}»: +{n} зол. сем.', { name: T(a.name), n: a.seed }));
             persist(true);
             renderHud();
         }
@@ -397,21 +610,105 @@ function doPrestige() {
     S.boostUntil = 0;
     ensureOrders();
     sfx('prestige');
-    toast('Новый сезон! +' + p + ' золотых семян');
+    toast(T('Новый сезон! +{p} золотых семян', { p }));
     fxPrestige();
     persist(true);
+    maybeAskReview();          // конец сезона — яркий момент, зовём на оценку
     closeAllSheets();
     renderHud();
     checkAch();
 }
 
+// ---------- Ежедневная серия заходов ----------
+const dayBefore = () => new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+const streakPending = () => !!S && S.streakDay !== todayStr();
+// день цикла, который игрок получит, если заберёт награду прямо сейчас
+function streakNextIndex() {
+    const next = (S.streakDay === dayBefore()) ? S.streak + 1 : 1;
+    return { streak: next, i: (next - 1) % STREAK_DAYS };
+}
+function claimStreak(mult) {
+    if (!streakPending()) return;
+    const { streak, i } = streakNextIndex();
+    S.streak = streak;
+    S.streakDay = todayStr();
+    const coins = streakCoins(i) * mult;
+    const seeds = STREAK_SEEDS[i] * mult;
+    grant(coins);
+    S.seeds += seeds;
+    sfx('chest');
+    toast(seeds
+        ? T('День {d}: +{n} монет и +{s} {seed}', { d: S.streak, n: fmt(coins), s: seeds, seed: icc('seed') })
+        : T('День {d}: +{n} монет', { d: S.streak, n: fmt(coins) }));
+    persist(true);
+    renderHud();
+}
+
+// ---------- Оценка игры ----------
+// canReview() обязателен перед requestReview(), а сам запрос разрешён один раз
+// за сессию — поэтому зовём только после яркого момента (первый новый сезон).
+function maybeAskReview(fallback) {
+    const skip = () => { if (fallback) fallback(); };
+    if (!ysdk || !ysdk.feedback || !S || S.reviewAsked || S.cnt.prestiges < 1) { skip(); return; }
+    try {
+        Promise.resolve(ysdk.feedback.canReview())
+            .then(r => {
+                if (!r || !r.value) { skip(); return; }   // NO_AUTH, GAME_RATED и т.п.
+                S.reviewAsked = true;
+                persist(true);
+                return ysdk.feedback.requestReview();
+            })
+            .catch(skip);
+    } catch(e) { skip(); }
+}
+
+// ---------- Ярлык на главный экран ----------
+// Самый прямой инструмент возвращаемости на площадке: игра появляется на
+// экране устройства. За установку разрешено давать награду — даём золотое семя.
+const SHORTCUT_REWARD = 1;
+// Предлагаем ярлык своей карточкой, а нативный showPrompt() зовём уже из
+// нажатия: без жеста пользователя браузер такой диалог может не открыть.
+function shortcutOffer() {
+    if (!ysdk || !ysdk.shortcut || !S || S.scDone || S.scAsked) return;
+    if (document.querySelector('.sheet.open, .modal.open')) return;   // не поверх другого окна
+    try {
+        Promise.resolve(ysdk.shortcut.canShowPrompt())
+            .then(r => { if (r && r.canShow) showShortcutModal(); })
+            .catch(() => {});
+    } catch(e) {}
+}
+function shortcutAccept() {
+    S.scAsked = true;                       // предлагаем один раз, без назойливости
+    persist(true);
+    try {
+        Promise.resolve(ysdk.shortcut.showPrompt())
+            .then(r => {
+                if (!r || r.outcome !== 'accepted') return;
+                S.scDone = true;
+                S.seeds += SHORTCUT_REWARD;
+                sfx('chest');
+                toast(T('Ярлык добавлен! +{n} золотое семя', { n: SHORTCUT_REWARD }));
+                persist(true);
+                renderHud();
+            })
+            .catch(() => {});
+    } catch(e) {}
+}
+function shortcutDecline() { S.scAsked = true; persist(true); }
+
 // ---------- Реклама (rewarded) ----------
 function showRewarded(cb) {
     if (ysdk && ysdk.adv) {
         try {
+            let paid = false;
+            const pay = () => { if (!paid) { paid = true; cb(); } };
             ysdk.adv.showRewardedVideo({ callbacks: {
-                onRewarded: cb,
-                onError: () => cb(),   // локально/ошибка — награду всё равно даём
+                // на время ролика игра обязана молчать: страница фокус не теряет,
+                // поэтому visibilitychange здесь не сработает и глушим вручную
+                onOpen:     () => audioSuspend(),
+                onRewarded: pay,
+                onClose:    () => audioResume(),
+                onError:    () => { audioResume(); pay(); },   // ошибка — награду всё равно даём
             }});
             return;
         } catch(e) {}
@@ -423,19 +720,21 @@ function adBoost() {
     showRewarded(() => {
         S.boostUntil = Date.now() + BOOST_MIN*60000;
         sfx('chest');
-        toast('Доход x2 на ' + BOOST_MIN + ' минуты!');
+        toast(T('Доход x2 на {n} минуты!', { n: BOOST_MIN }));
         persist(true);
         renderHud();
     });
 }
+// есть ли что дорастить: посаженная и ещё не созревшая грядка
+const growable = () => !!S && S.plots.some(p => p.c >= 0 && p.t < cropGrow(CROPS[p.c]));
 function adGrowAll() {
-    if (Date.now() < S.adGrowAt) return;
+    if (Date.now() < S.adGrowAt || !growable()) return;
     showRewarded(() => {
         for (const p of S.plots)
             if (p.c >= 0) p.t = cropGrow(CROPS[p.c]);
         S.adGrowAt = Date.now() + AD_GROW_CD*1000;
         sfx('chest');
-        toast('Всё выросло!');
+        toast(T('Всё выросло!'));
         persist(true);
         renderHud();
     });
@@ -641,29 +940,71 @@ function pickAt(cx, cy) {
 let offlineT = 0;
 // прогоняем обычный sim крупными шагами: рост, сбор урожая работниками на склад
 // (с лимитом склада), производство животных. Доход/с (ips) офлайн не меняем.
+// Досчёт офлайна короткими шагами. Шаг увеличивать нельзя: за один шаг грядка
+// проходит максимум один цикл «посадка → рост → сбор», и на длинном шаге доход
+// молча просел бы. Предел шагов выводим из потолка, а не задаём числом, — раньше
+// он был константой 2000 и втихую обрезал начисление на 8 часах 20 минутах.
+const FF_STEP = 15;                                            // сек
+const FF_MAX_STEPS = Math.ceil(OFFLINE_CAP / FF_STEP) + 10;    // с запасом
+// Пока идёт досчёт, симуляция должна быть немой: сохранения, частицы, звуки и
+// всплывающие подписи рассчитаны на один кадр реального времени, а здесь их
+// набегают десятки тысяч. См. persist(), harvestPlot() и checkAch().
+let ffBusy = false;
 function fastForward(t) {
     const ips = S.ips, best = S.bestIps;
     let rem = t, g = 0;
-    while (rem > 0 && g++ < 2000) { simulate(Math.min(15, rem)); rem -= 15; }
+    ffBusy = true;
+    try {
+        while (rem > 0 && g++ < FF_MAX_STEPS) { simulate(Math.min(FF_STEP, rem)); rem -= FF_STEP; }
+    } finally { ffBusy = false; }
     S.ips = ips; S.bestIps = best;
 }
 function offlineCheck() {
     const dt = Math.max(0, (Date.now() - S.time) / 1000);
-    if (dt < 60) return;
+    if (dt < OFFLINE_MIN) return;
     offlineT = Math.min(dt, OFFLINE_CAP);
-    const c0 = Math.floor(S.coins), st0 = storeTotal();
+    const c0 = Math.floor(S.coins);
+    const before = Object.assign({}, S.store);
+    const cnt0 = Object.assign({}, S.cnt);
     fastForward(offlineT);
+    rebaseQuests(cnt0);
     const coins = Math.floor(S.coins) - c0;      // продавец наторговал
-    const store = storeTotal() - st0;            // работники собрали на склад
-    if (coins > 0 || store > 0) showOfflineModal(coins, store, offlineT);
+    // что именно прибавилось на складе: показываем чистый прирост по товарам,
+    // проданное продавцом уже отражено в монетах
+    const gained = {};
+    let store = 0;
+    for (const id in S.store) {
+        const d = S.store[id] - (before[id] || 0);
+        if (d > 0) { gained[id] = d; store += d; }
+    }
+    // Склад мог заполниться задолго до конца отлучки — тогда работники всё
+    // оставшееся время простаивали, и игрок недополучил. Честно скажем об этом.
+    const barnFull = storeTotal() >= whCap();
+    // Короткие отлучки не отчитываем: сводка ради пары минут только мешает.
+    if (dt < OFFLINE_REPORT) return;
+    if (coins > 0 || store > 0) showOfflineModal(coins, gained, store, offlineT, barnFull);
+}
+// Прогноз офлайн-дохода для подсказки на складе — причина вернуться завтра.
+// Точную цифру дала бы только симуляция, но она мутирует состояние и попутно
+// дёргает звуки и достижения, поэтому это приближение по текущему темпу — «≈».
+// Без продавца офлайн никто не торгует, значит и монет не будет.
+function offlineForecast() {
+    // Нужна вся цепочка: сеятель сажает, сборщик собирает, продавец продаёт.
+    // Без любого звена офлайн-доход не идёт, и обещать его нельзя.
+    if (!S || !S.workers.harv || !S.workers.sow || !S.workers.seller) return 0;
+    return Math.round(S.ips * OFFLINE_CAP);
 }
 // «продолжить» (реклама): ещё столько же времени работы
 function offlineBonus() {
     const c0 = Math.floor(S.coins), st0 = storeTotal();
+    const cnt0 = Object.assign({}, S.cnt);
     fastForward(offlineT);
+    rebaseQuests(cnt0);          // продление — та же офлайн-работа, в квесты не идёт
     const coins = Math.floor(S.coins) - c0, store = storeTotal() - st0;
     sfx(coins > 0 || store > 0 ? 'coin' : 'error');
-    toast(coins > 0 ? '+' + fmt(coins) + ' монет' : store > 0 ? '+' + store + ' на склад' : 'Ничего нового');
+    toast(coins > 0 ? T('+{n} монет', { n: fmt(coins) })
+        : store > 0 ? T('+{n} на склад', { n: store })
+        : T('Ничего нового'));
     persist(true);
     renderHud(); renderBarn();
 }
@@ -704,7 +1045,33 @@ window.render_game_to_text = () => JSON.stringify({
 window.advanceTime = ms => { simulate(ms/1000); renderHud(); };
 
 // ---------- Загрузка ----------
+// GameReady: платформа требует, чтобы сигнал готовности уходил ДО того, как
+// игра станет доступна для действий игрока. Поэтому ready() вызывается в конце
+// boot(), но перед показом интерфейса, и ровно один раз на любом пути запуска.
+// Если игра поднялась по фолбэку, SDK ещё нет — тогда сигнал уходит позже,
+// как только SDK ответит; _readyWanted помнит, что игра уже готова.
+let _readyWanted = false, _readySent = false;
+function signalReady() {
+    _readyWanted = true;
+    if (_readySent) return;
+    try {
+        const api = ysdk && ysdk.features && ysdk.features.LoadingAPI;
+        if (api && typeof api.ready === 'function') { api.ready(); _readySent = true; }
+    } catch(e) { _readySent = true; }   // повторять бессмысленно
+}
+// SDK ответил уже после запуска по фолбэку — уточняем язык по данным платформы
+function applySdkLang() {
+    if (!booted) return;
+    const l = detectLang(ysdk);
+    if (l === LANG) return;
+    setLang(l);
+    applyStaticT();
+    renderHud();
+    renderTut();
+}
 function boot(raw) {
+    setLang(detectLang(ysdk));   // до initUI: вся статика и рендеры уже на нужном языке
+    applyStaticT();
     S = restore(raw);
     setSoundVolume(1);   // мастер фиксирован; громкости масштабируем в sfx()/музыке
     ensureOrders();
@@ -715,6 +1082,15 @@ function boot(raw) {
     renderHud();
     renderTut();
     persist(true);
+    // Награда за серию — только тем, кто уже освоился: новичка на первом запуске
+    // встречать окном «ты вернулся» бессмысленно, его серия начнётся со второго
+    // захода. Если открыта офлайн-сводка, окно покажется после неё.
+    if (S.tut >= 3 && streakPending() && !document.querySelector('.modal.open')) showStreakModal();
+    setInterval(tipTick, 1000);   // контекстные подсказки: условия проверяем раз в секунду
+    // ярлык предлагаем не сразу, а когда игрок уже втянулся
+    setTimeout(shortcutOffer, 150000);
+    signalReady();                            // сначала сообщаем платформе…
+    document.body.classList.add('ready');     // …и только потом открываем UI
 }
 (function start() {
     setShowSplashScreen(false);
@@ -733,14 +1109,23 @@ function boot(raw) {
     let done = false;
     const fallback = () => { if (!done) { done = true; boot(localRaw); } };
     if (window.YaGames) {
-        setTimeout(fallback, 4000);
+        // Ждём SDK, а не стартуем по короткому таймауту: до его ответа неизвестен
+        // язык платформы, а игра, ставшая доступной раньше сигнала GameReady,
+        // нарушает требования. Пока мы молчим, площадка держит свой лоадер.
+        // Таймаут — только страховка от намертво зависшего SDK.
+        setTimeout(fallback, 15000);
         YaGames.init().then(sdk => {
             ysdk = sdk;
             return sdk.getPlayer().then(p => p.getData(['save'])).then(d => {
-                if (done) return;
-                done = true;
-                boot(d && d.save ? d.save : localRaw);
-                try { ysdk.features.LoadingAPI && ysdk.features.LoadingAPI.ready(); } catch(e) {}
+                if (!done) {
+                    done = true;
+                    boot(d && d.save ? d.save : localRaw);   // boot сам отправит GameReady
+                } else {
+                    // фолбэк уже поднял игру на локальном сейве: досылаем сигнал
+                    // готовности и уточняем язык, раз платформа наконец ответила
+                    if (_readyWanted) signalReady();
+                    applySdkLang();
+                }
                 initLeaderboard();
             });
         }).catch(fallback);
